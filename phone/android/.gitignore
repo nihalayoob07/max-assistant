@@ -1,0 +1,7 @@
+.gradle/
+build/
+local.properties
+# Server address and the phone API key (made by phone-api.js on the server): never committed.
+phone.properties
+# Firebase client config: your own project.
+app/google-services.json

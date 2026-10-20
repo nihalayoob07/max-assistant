@@ -1,0 +1,14 @@
+# Max's hands on the home server (systemd user service).
+# Listens only on the sandbox bridge (172.19.0.1): Max reaches it as host.openshell.internal:18701.
+# The relay forwards host.openshell.internal:18700 to the laptop's reverse SSH tunnel (127.0.0.1:18700).
+[Unit]
+Description=Max hands (server)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/node %h/max-assistant/hands/hands.js --name server --listen 172.19.0.1:18701 --token-file %h/.config/max-hands/token --relay 172.19.0.1:18700=127.0.0.1:18700
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

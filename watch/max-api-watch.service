@@ -1,0 +1,13 @@
+# Keeps Max's API port (127.0.0.1:8642, which the desktop app and WhatsApp extension tunnel to) alive.
+# NemoClaw's forward for it sometimes dies on its own (Hermes inside the sandbox keeps running); restarting
+# just the forward brings it back, with `max recover` as the fallback. Run every minute by the timer.
+[Unit]
+Description=Max API port watchdog
+
+[Service]
+EnvironmentFile=-%h/max-assistant/max.config
+Type=oneshot
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/sh -c 'up() { curl -s -o /dev/null --max-time 5 http://127.0.0.1:8642/v1/models; }; up && exit 0; echo "8642 down, restarting the forward"; openshell --gateway nemoclaw forward start -d 127.0.0.1:8642 $${SANDBOX:-max} >/dev/null 2>&1 </dev/null; sleep 5; up && exit 0; echo "still down, running recover"; timeout 180 nemohermes $${SANDBOX:-max} recover >/dev/null 2>&1; true'
+# The forward runs on in the background: don't kill it when this check finishes (systemd's default would).
+KillMode=process

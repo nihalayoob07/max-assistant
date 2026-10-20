@@ -1,0 +1,37 @@
+# Max: your settings. bin/install copies this to max.config (git-ignored) and asks you for the first few.
+# Edit max.config any time, then run bin/fixup (and bin/install if you switched on an optional part).
+# Plain KEY=value lines; quote values with spaces; comments only on their own lines (systemd reads this too).
+# No secrets here: API keys and bot tokens are typed at hidden prompts and kept by OpenShell.
+
+# --- About you ---
+# What Max calls you. Never shown to customers.
+OWNER_NAME="Alex"
+# Your numeric Telegram user ID (ask @userinfobot). Only this account can talk to Max.
+TELEGRAM_USER_ID=123456789
+# IANA time zone, e.g. Europe/London, America/New_York (list: timedatectl list-timezones).
+TIMEZONE=Asia/Kolkata
+# City for the weather in the morning briefing.
+CITY="Mumbai"
+# Currency symbol for prices and reports, e.g. ₹ $ £ €. Number and date format for the apps, e.g. en-US, en-GB.
+CURRENCY="₹"
+LOCALE=en-IN
+# Morning briefing (daily) and weekly business report (Mondays), your local time.
+BRIEFING_TIME=06:30
+REPORT_TIME=09:00
+
+# --- The sandbox (change only if you know why) ---
+SANDBOX=max
+# Any NVIDIA model your key can reach on build.nvidia.com.
+MODEL=nvidia/nemotron-3.5-super-vl-120b-a12b
+SANDBOX_CPU=1
+SANDBOX_RAM=1Gi
+
+# --- Optional parts: yes or no. bin/install sets up only what is "yes". ---
+# WhatsApp front desk: WhatsApp Web in a browser on the server (needs a second Telegram bot, ~600 MB RAM).
+WHATSAPP=no
+# Your business WhatsApp number as customers see it, e.g. "+91 90000 00000".
+WHATSAPP_NUMBER=""
+# Windows desktop app with voice and control of your PC (sets up the server side of "hands").
+DESKTOP=no
+# Android app that rings you for decisions (needs your own Firebase project and Tailscale).
+PHONE=no

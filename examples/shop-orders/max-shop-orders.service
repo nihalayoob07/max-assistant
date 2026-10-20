@@ -1,0 +1,10 @@
+# Copies a shop's orders (read-only) into Max's workspace. Started by max-shop-orders.timer.
+# Set your shop's container and business slug below, then: cp both files to ~/.config/systemd/user/ and
+# systemctl --user enable --now max-shop-orders.timer
+[Unit]
+Description=Shop orders for Max
+
+[Service]
+Type=oneshot
+Environment=SHOP_CONTAINER=myshop-app-1 SHOP_DB=/data/shop.db BUSINESS=myshop
+ExecStart=/bin/bash %h/max-assistant/examples/shop-orders/sqlite-orders.sh

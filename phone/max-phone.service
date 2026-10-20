@@ -1,0 +1,13 @@
+# Phone API for the Max Android app (systemd user service on the home server). Reach it over Tailscale.
+[Unit]
+Description=Max phone API
+After=network-online.target
+
+[Service]
+EnvironmentFile=-%h/max-assistant/max.config
+ExecStart=/usr/bin/node %h/max-assistant/phone/phone-api.js --listen 0.0.0.0:18660
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

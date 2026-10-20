@@ -1,0 +1,30 @@
+'use strict';
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('max', {
+  connect: () => ipcRenderer.invoke('connect'),
+  load: () => ipcRenderer.invoke('load'),
+  chat: (messages) => ipcRenderer.invoke('chat', messages),
+  chatStream: (id, messages) => ipcRenderer.invoke('chatStream', id, messages),
+  onStream: (cb) => ipcRenderer.on('stream', (_e, d) => cb(d)),
+  cancelChat: (id) => ipcRenderer.send('chat-cancel', id),
+  wake: (float32, sliding) => ipcRenderer.invoke('wake', float32.buffer, !!sliding),
+  transcribe: (float32) => ipcRenderer.invoke('transcribe', float32.buffer),
+  speak: (id, text) => ipcRenderer.invoke('speak', id, text),
+  cancelSpeak: (id) => ipcRenderer.send('speak-cancel', id),
+  onTts: (cb) => ipcRenderer.on('tts', (_e, d) => cb(d)),
+  voice: (what) => ipcRenderer.send('voice', what),
+  duck: (on) => ipcRenderer.send('duck', on),
+  voiceShape: (rects) => ipcRenderer.send('voice-shape', rects),
+  onExpand: (cb) => ipcRenderer.on('expand', () => cb()),
+  onAnnounce: (cb) => ipcRenderer.on('announce', (_e, t) => cb(t)),
+  onWake: (cb) => ipcRenderer.on('wake', (_e, q) => cb(q)),
+  appendChat: (m) => ipcRenderer.send('chat-append', m),
+  onChatAppend: (cb) => ipcRenderer.on('chat-append', (_e, m) => cb(m)),
+  lead: (a) => ipcRenderer.invoke('lead', a),
+  deskMode: (set) => ipcRenderer.invoke('deskMode', set),
+  pc: (what) => ipcRenderer.invoke('pc', what),
+  onPc: (cb) => ipcRenderer.on('pc-changed', (_e, pc) => cb(pc)),
+  cal: (a) => ipcRenderer.invoke('cal', a),
+  win: (what) => ipcRenderer.send('win', what),
+});

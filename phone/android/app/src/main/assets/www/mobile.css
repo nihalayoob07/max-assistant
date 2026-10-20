@@ -1,0 +1,55 @@
+/* Phone layout over the desktop HUD (style.css): same palette and cut corners, one column, tabs at the
+   bottom, and none of the costly bits (blur, glows, animations) so it stays smooth on a slow phone. */
+body {
+  grid-template: 48px 1fr 60px / 1fr;
+  grid-template-areas: 'bar' 'main' 'rail';
+  font-size: 16px;
+  user-select: auto;
+}
+*, *::before, *::after { animation: none !important; transition: none !important; }
+.panel { backdrop-filter: none; }
+.brand, h1, .core .name { text-shadow: none; }
+
+.bar { padding: 0 14px; gap: 12px; -webkit-app-region: none; }
+.bar .clock { font-size: 12px; }
+
+.rail {
+  flex-direction: row; justify-content: space-around; align-items: stretch; padding: 0;
+  border-right: 0; border-top: 1px solid var(--line); background: #02090c;
+}
+.rail button { width: auto; height: auto; flex: 1; gap: 2px; clip-path: none; align-content: center; }
+.rail button i { font: normal 600 10px var(--display); letter-spacing: 0.14em; text-transform: uppercase; }
+.rail button.active::before { left: 25%; right: 25%; top: 0; bottom: auto; width: auto; height: 2px; }
+.rail button .badge { top: 6px; right: calc(50% - 22px); }
+.rail button[data-tip]:hover::after { display: none; }
+
+main { padding: 16px 14px 24px; }
+h1 { font-size: 22px; }
+.sub { margin-bottom: 14px; }
+.home, .grid.two, .cal { grid-template-columns: 1fr; }
+.panel { padding: 14px; }
+.core { padding: 16px 12px; }
+.core .hint { display: none; }
+.orb { width: 120px; height: 120px; }
+.orb.lite svg { width: 100%; height: 100%; display: block; }
+.stat b { font-size: 18px; }
+
+/* Bigger touch targets. */
+button.hud { padding: 11px 14px; font-size: 14px; }
+.hud-input { padding: 10px; font-size: 15px; }
+.decision .actions.answer .hud-input { flex: 1 1 40%; width: auto; }
+.decision .pbox { min-width: 0; flex: 1; }
+
+/* Leads: the wide table scrolls sideways instead of squashing. */
+.panel table { display: block; overflow-x: auto; white-space: nowrap; }
+.panel td:last-child { white-space: normal; min-width: 220px; }
+
+/* Chat fills the space between the bars. */
+.chat { height: calc(100vh - 48px - 60px - 40px); }
+.chat-head .orb { width: 48px; height: 48px; }
+.msg { max-width: 90%; }
+.chips { overflow-x: auto; flex-wrap: nowrap; }
+.chips button { flex: none; }
+.compose textarea { font-size: 16px; min-height: 48px; }
+
+.toast { left: 14px; right: 14px; bottom: 72px; }

@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# Install Max on a Linux server (home server or VPS) with Docker, NemoClaw's supported path. Run it as your
+# normal user from the cloned repo: bin/install. It asks a few questions, uses sudo only where it must, and is
+# safe to re-run: every step checks what is already done and skips it. Guide: docs/SETUP.md.
+set -euo pipefail
+here=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+cd "$here"
+export PATH="$HOME/.local/bin:$PATH"
+step() { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
+ok() { printf '   \033[32m✓\033[0m %s\n' "$*"; }
+die() { printf '\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
+ask() { local v; read -rp "   $1${2:+ [$2]}: " v; printf '%s' "${v:-${2:-}}"; }
+confirm() { local v; read -rp "   $1 [${2:-y}/n]: " v; [[ ${v:-${2:-y}} =~ ^[Yy] ]]; }
+setcfg() { local k=$1 v=$2; v=${v//\"/}; v=${v//\\/\\\\}; v=${v//&/\\&}; v=${v//|/\\|}; sed -i "s|^$k=.*|$k=\"$v\"|" max.config; }
+mem_gib() { awk -v k="$1" '$1 == k":" { printf "%d", $2 / 1048576 + 0.5 }' /proc/meminfo; }
+
+[ "$(uname -s)" = Linux ] || die "Max's server side needs Linux (a home server or a VPS). See docs/SETUP.md."
+[ "$(id -u)" != 0 ] || die "Run this as your normal user, not root. It asks for sudo when it needs it."
+[ -t 0 ] || die "Run this in a terminal: it asks questions and reads keys at hidden prompts."
+
+# ---------------------------------------------------------------------------------------------------------
+step "1/8 Your settings (max.config)"
+if [ ! -f max.config ]; then
+  cp max.config.example max.config
+  echo "   A few questions; everything is in max.config afterwards if you want to change it."
+  setcfg OWNER_NAME "$(ask 'Your first name (Max calls you this; customers never see it)' "${USER^}")"
+  while :; do id=$(ask 'Your numeric Telegram user ID (message @userinfobot to get it)'); [[ $id =~ ^[0-9]+$ ]] && break; echo "   That should be digits only."; done
+  sed -i "s|^TELEGRAM_USER_ID=.*|TELEGRAM_USER_ID=$id|" max.config
+  tz=$(timedatectl show -p Timezone --value 2>/dev/null || true)
+  while :; do tz=$(ask 'Your time zone' "${tz:-UTC}"); [ -f "/usr/share/zoneinfo/$tz" ] && break; echo "   Not a time zone name. Examples: Asia/Kolkata, Europe/London, America/New_York."; done
+  sed -i "s|^TIMEZONE=.*|TIMEZONE=$tz|" max.config
+  setcfg CITY "$(ask 'Your city (for the weather in the morning briefing)')"
+  setcfg CURRENCY "$(ask 'Currency symbol for your prices' '₹')"
+  sed -i "s|^LOCALE=.*|LOCALE=$(ask 'Number/date format (en-IN, en-US, en-GB, ...)' 'en-IN')|" max.config
+  echo "   Optional parts (you can switch them on later in max.config and re-run bin/install):"
+  confirm "WhatsApp front desk (answers customers on WhatsApp Web, needs ~600 MB more RAM)?" n && sed -i 's|^WHATSAPP=.*|WHATSAPP=yes|' max.config
+  if grep -q '^WHATSAPP=yes' max.config; then setcfg WHATSAPP_NUMBER "$(ask 'Your business WhatsApp number, as customers see it')"; fi
+  confirm "Windows desktop app with voice and PC control?" n && sed -i 's|^DESKTOP=.*|DESKTOP=yes|' max.config
+  confirm "Android app that rings you for decisions (needs Firebase and Tailscale)?" n && sed -i 's|^PHONE=.*|PHONE=yes|' max.config
+fi
+. ./max.config
+SANDBOX=${SANDBOX:-max}
+[[ ${TELEGRAM_USER_ID:-} =~ ^[0-9]+$ ]] || die "max.config: TELEGRAM_USER_ID must be your numeric Telegram ID"
+[ -f "/usr/share/zoneinfo/${TIMEZONE:-}" ] || die "max.config: TIMEZONE '${TIMEZONE:-}' is not a time zone"
+ok "max.config: ${OWNER_NAME:-?}, $TIMEZONE, sandbox '$SANDBOX', WhatsApp=${WHATSAPP:-no} desktop=${DESKTOP:-no} phone=${PHONE:-no}"
+
+# The services and the apps find Max's files at ~/max-assistant: link it if the repo lives elsewhere.
+if [ "$(readlink -f ~/max-assistant 2>/dev/null)" != "$here" ]; then
+  [ -e ~/max-assistant ] && die "~/max-assistant exists but isn't this repo. Move it away, or clone Max there."
+  ln -s "$here" ~/max-assistant && ok "linked ~/max-assistant -> $here"
+fi
+
+# ---------------------------------------------------------------------------------------------------------
+step "2/8 Docker, curl, python3"
+for c in curl python3 git openssl; do command -v $c >/dev/null || die "$c is missing. Install it with your package manager (apt install $c / dnf install $c), then re-run."; done
+if ! command -v docker >/dev/null; then
+  echo "   Docker isn't installed. Docker's own script installs it on Ubuntu, Debian, Fedora, CentOS and others."
+  confirm "Install Docker now with sudo (get.docker.com)?" || die "Install Docker, then re-run bin/install."
+  curl -fsSL https://get.docker.com | sudo sh
+  sudo systemctl enable --now docker
+fi
+if ! docker info >/dev/null 2>&1; then
+  if ! id -nG | grep -qw docker; then
+    sudo usermod -aG docker "$USER"
+    die "Added you to the docker group. Log out and back in (or reboot), then run bin/install again."
+  fi
+  sudo systemctl start docker; sleep 3; docker info >/dev/null 2>&1 || die "Docker isn't answering (try: sudo systemctl status docker)."
+fi
+ok "docker $(docker version -f '{{.Server.Version}}' 2>/dev/null)"
+
+# ---------------------------------------------------------------------------------------------------------
+step "3/8 Memory (NemoClaw needs 8 GB of RAM, or RAM plus swap)"
+ram=$(mem_gib MemTotal); swap=$(mem_gib SwapTotal)
+echo "   RAM ${ram} GB, swap ${swap} GB."
+if [ "$ram" -lt 8 ] && [ "$swap" -lt 8 ] && [ ! -e /swapfile ]; then
+  size=$((8 - swap)); [ $size -lt 2 ] && size=2
+  echo "   Under 8 GB of RAM, Max needs swap or onboarding fails and the box freezes under load."
+  if confirm "Create a ${size} GB swap file at /swapfile (sudo)?"; then
+    if [ "$(stat -f -c %T /)" = btrfs ]; then sudo btrfs filesystem mkswapfile --size ${size}g /swapfile
+    else sudo dd if=/dev/zero of=/swapfile bs=1M count=$((size * 1024)) status=none; sudo chmod 600 /swapfile; sudo mkswap /swapfile >/dev/null; fi
+    sudo swapon /swapfile
+    grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap defaults 0 0' | sudo tee -a /etc/fstab >/dev/null
+    ok "swap on: $(mem_gib SwapTotal) GB"
+  else echo "   Skipped. If onboarding is killed or the server stalls, add swap and re-run."; fi
+else ok "enough memory"; fi
+
+# ---------------------------------------------------------------------------------------------------------
+step "4/8 NemoClaw and the '$SANDBOX' sandbox (Hermes Agent on NVIDIA Nemotron)"
+if command -v openshell >/dev/null && openshell sandbox list 2>/dev/null | awk '{print $1}' | grep -qx "$SANDBOX"; then
+  ok "sandbox '$SANDBOX' already exists: leaving it alone (re-onboarding would rebuild it and lose its keys)"
+else
+  echo "   Your keys go straight to the OpenShell gateway on this server; nothing is written to disk or to the sandbox."
+  while :; do read -rsp "   NVIDIA API key (nvapi-..., free at build.nvidia.com): " NVIDIA_INFERENCE_API_KEY; echo; [[ $NVIDIA_INFERENCE_API_KEY == nvapi-* ]] && break; echo "   It starts with nvapi-."; done
+  while :; do read -rsp "   Telegram bot token for Max (from @BotFather, /newbot): " TELEGRAM_BOT_TOKEN; echo; [[ $TELEGRAM_BOT_TOKEN =~ ^[0-9]+:[A-Za-z0-9_-]{30,}$ ]] && break; echo "   That doesn't look like a bot token (123456:ABC...)."; done
+  read -rsp "   Tavily API key for web search (optional, free at tavily.com; Enter to skip): " TAVILY_API_KEY; echo
+  # Check the key reaches the model before NemoClaw stores it: NVIDIA retires models, and a 404 here means
+  # "pick another MODEL in max.config", not a bad key.
+  code=$(curl -s -o /tmp/max-nv-check -w '%{http_code}' --max-time 60 https://integrate.api.nvidia.com/v1/chat/completions \
+    -H "Authorization: Bearer $NVIDIA_INFERENCE_API_KEY" -H 'Content-Type: application/json' \
+    -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Say OK\"}],\"max_tokens\":5}" || true)
+  case $code in
+    200) ok "NVIDIA key works with $MODEL" ;;
+    401|403) rm -f /tmp/max-nv-check; die "NVIDIA says the key is invalid ($code). Make a new one at build.nvidia.com and re-run." ;;
+    404) rm -f /tmp/max-nv-check; die "NVIDIA has no '$MODEL' for your key (404). Set MODEL in max.config to one listed on build.nvidia.com and re-run." ;;
+    *) echo "   NVIDIA answered $code ($(head -c 200 /tmp/max-nv-check 2>/dev/null)); carrying on." ;;
+  esac
+  rm -f /tmp/max-nv-check
+  export NVIDIA_INFERENCE_API_KEY TELEGRAM_BOT_TOKEN TAVILY_API_KEY
+  export TELEGRAM_ALLOWED_IDS=$TELEGRAM_USER_ID TELEGRAM_REQUIRE_MENTION=0
+  export NEMOCLAW_NON_INTERACTIVE=1 NEMOCLAW_NO_EXPRESS=1 NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE=1 \
+    NEMOCLAW_AGENT=hermes NEMOCLAW_SANDBOX_NAME=$SANDBOX NEMOCLAW_PROVIDER=build NEMOCLAW_MODEL=$MODEL \
+    NEMOCLAW_CPU=${SANDBOX_CPU:-1} NEMOCLAW_RAM=${SANDBOX_RAM:-1Gi}
+  if [ -n "$TAVILY_API_KEY" ]; then export NEMOCLAW_WEB_SEARCH_PROVIDER=tavily; else unset TAVILY_API_KEY; fi
+  echo "   This takes 10-20 minutes and downloads a few GB. Don't run nemohermes in another terminal meanwhile."
+  if command -v nemohermes >/dev/null; then nemohermes onboard --name "$SANDBOX"
+  else curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash; fi
+  unset NVIDIA_INFERENCE_API_KEY TELEGRAM_BOT_TOKEN TAVILY_API_KEY
+  export PATH="$HOME/.local/bin:$PATH"; hash -r
+  openshell sandbox list 2>/dev/null | awk '{print $1}' | grep -qx "$SANDBOX" || die "Onboarding didn't create the sandbox. Read the output above, fix it, and re-run (see Troubleshooting in docs/SETUP.md)."
+  ok "sandbox '$SANDBOX' created"
+fi
+command -v node >/dev/null || die "Node.js is missing (NemoClaw normally brings it). Install Node 22+ and re-run."
+NODE=$(readlink -f "$(command -v node)")
+
+# ---------------------------------------------------------------------------------------------------------
+step "5/8 The max and max-fixup commands"
+mkdir -p ~/.local/bin
+ln -sf "$here/bin/max" ~/.local/bin/max
+ln -sf "$here/bin/fixup" ~/.local/bin/max-fixup
+grep -qs '.local/bin' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+ok "max and max-fixup are in ~/.local/bin"
+
+# ---------------------------------------------------------------------------------------------------------
+step "6/8 Your first business"
+if ! ls -d private/business/*/ >/dev/null 2>&1; then
+  echo "   Max sells for you inside limits you set: a profile, a price list with floor prices, and a never-agree list."
+  name=$(ask "Your business's name (Enter to skip for now)")
+  if [ -n "$name" ]; then
+    slug=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//')
+    mkdir -p private/business && cp -r business-template/example-shop "private/business/$slug"
+    t=${name//\\/\\\\}; t=${t//&/\\&}; t=${t//|/\\|}; sed -i "1s|.*|# $t|" "private/business/$slug/profile.md"
+    ok "made private/business/$slug/ from the example. Fill in profile.md, policy.tsv and never.md (see docs/SETUP.md)"
+    if command -v "${EDITOR:-nano}" >/dev/null && confirm "Edit them now in ${EDITOR:-nano}?"; then
+      for f in profile.md policy.tsv never.md; do "${EDITOR:-nano}" "private/business/$slug/$f"; done
+    fi
+  else echo "   Skipped: Max gets the example shop until you add one (docs/SETUP.md, 'Add your business')."; fi
+else ok "businesses: $(ls private/business | tr '\n' ' ')"; fi
+
+# ---------------------------------------------------------------------------------------------------------
+step "7/8 Max's setup inside the sandbox (bin/fixup)"
+if [ "${DESKTOP:-no}" = yes ]; then   # the hands helpers' shared secret; fixup gives it to the sandbox
+  mkdir -p ~/.config/max-hands
+  [ -s ~/.config/max-hands/token ] || (umask 077; openssl rand -hex 32 > ~/.config/max-hands/token)
+fi
+"$here/bin/fixup"
+
+# ---------------------------------------------------------------------------------------------------------
+step "8/8 Server services"
+units=~/.config/systemd/user; mkdir -p "$units"
+# Copy a unit, pointing it at this machine's node (and, for hands, at the sandbox bridge).
+unit() { sed -e "s|/usr/bin/node|$NODE|g" ${2:+-e "$2"} "$here/$1" > "$units/$(basename "$1")"; }
+loginctl show-user "$USER" -p Linger 2>/dev/null | grep -q yes || loginctl enable-linger "$USER" 2>/dev/null || sudo loginctl enable-linger "$USER"
+enable=(max-api-watch.timer)
+unit watch/max-api-watch.service; unit watch/max-api-watch.timer
+
+if [ "${DESKTOP:-no}" = yes ]; then
+  # The helper listens only on the sandbox's bridge, which the sandbox sees as host.openshell.internal.
+  bridge=$(max exec -- getent hosts host.openshell.internal 2>/dev/null | awk '/^[0-9]/ { print $1; exit }')
+  [[ $bridge =~ ^[0-9.]+$ ]] || die "Couldn't find the sandbox bridge address (max exec -- getent hosts host.openshell.internal)."
+  unit hands/max-hands.service "s|172\.19\.0\.1|$bridge|g"
+  enable+=(max-hands.service)
+  # Frees a reverse tunnel left behind by a laptop that dropped off, so the desktop app can reconnect.
+  [ -f /etc/ssh/sshd_config.d/50-max-keepalive.conf ] || { printf 'ClientAliveInterval 30\nClientAliveCountMax 3\n' | sudo tee /etc/ssh/sshd_config.d/50-max-keepalive.conf >/dev/null; sudo systemctl reload sshd 2>/dev/null || sudo systemctl reload ssh 2>/dev/null || true; }
+  ok "hands helper on $bridge:18701 (the desktop app fetches the key over SSH)"
+fi
+
+if [ "${WHATSAPP:-no}" = yes ]; then
+  c=~/.config/max-desk; mkdir -p "$c"; chmod 700 "$c"
+  [ -s "$c/key" ] || (umask 077; openssl rand -hex 24 > "$c/key")
+  if [ ! -s "$c/bot-token" ]; then
+    echo "   The WhatsApp desk talks to you through a SECOND Telegram bot (Telegram allows one reader per bot)."
+    while :; do read -rsp "   Token of your second bot (@BotFather, /newbot): " t; echo; [[ $t =~ ^[0-9]+:[A-Za-z0-9_-]{30,}$ ]] && break; echo "   That doesn't look like a bot token."; done
+    (umask 077; printf '%s' "$t" > "$c/bot-token"); unset t
+  fi
+  printf '%s' "$TELEGRAM_USER_ID" > "$c/owner-chat"
+  command -v npm >/dev/null || die "npm is missing (it comes with Node.js); the WhatsApp browser needs it."
+  unit desk/max-desk.service; enable+=(max-desk.service)
+fi
+
+if [ "${PHONE:-no}" = yes ]; then
+  unit phone/max-phone.service; enable+=(max-phone.service)
+fi
+
+systemctl --user daemon-reload
+systemctl --user enable --now "${enable[@]}" >/dev/null 2>&1 || systemctl --user enable --now "${enable[@]}"
+for u in "${enable[@]}"; do systemctl --user restart "$u" 2>/dev/null || true; ok "$u running"; done
+if [ "${WHATSAPP:-no}" = yes ]; then
+  "$here/desk/max-wa.sh" >/dev/null && ok "WhatsApp Web is starting: the QR code to link it arrives from your second bot on Telegram"
+fi
+if [ "${PHONE:-no}" = yes ]; then
+  sleep 2; [ -s ~/.config/max-phone/key ] && ok "phone API on :18660 (key in ~/.config/max-phone/key; see docs/SETUP.md, 'Android app')"
+fi
+
+cat <<EOF
+
+$(printf '\033[1;32m')Max is installed.$(printf '\033[0m')
+  1. In Telegram, open your bot and send /start, then "hi". Max answers in a minute or two.
+  2. Try: "todo: call the bank friday", "look into <anything>", "brief me".
+  3. Business: edit private/business/<name>/, then run max-fixup. Test with:
+     max ask "customer +911234567890 on whatsapp says: hi, how much for 20 keychains?"
+  Everyday commands: max status · max logs --follow · max backup · max-fixup. Guide: docs/SETUP.md
+EOF

@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font: 13px system-ui, sans-serif; width: 340px; margin: 0; padding: 12px; color: #111; }
+    h1 { font-size: 15px; margin: 0 0 10px; }
+    label { display: block; margin: 8px 0; }
+    label.row { display: flex; gap: 8px; align-items: flex-start; }
+    input[type=text], input[type=password] { width: 100%; box-sizing: border-box; padding: 5px; margin-top: 3px; }
+    small { color: #666; display: block; }
+    .warn { color: #a40; }
+    button { margin-top: 6px; padding: 5px 10px; }
+    #status { margin-left: 6px; }
+    ul { list-style: none; padding: 0; margin: 10px 0 0; max-height: 220px; overflow: auto; border-top: 1px solid #ddd; }
+    li { padding: 4px 0; border-bottom: 1px solid #eee; }
+    li.error { color: #b00; }
+    li time { color: #888; margin-right: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Max for WhatsApp</h1>
+  <label class="row"><input type="checkbox" id="enabled"><span>On: hand new customer messages to Max</span></label>
+  <label class="row"><input type="checkbox" id="unsavedOnly"><span>Only unsaved numbers<small>Saved contacts (friends, family) are never read or sent to the AI.</small></span></label>
+  <label class="row"><input type="checkbox" id="selfTest"><span>Test mode: my own chat<small>In your "(You)" chat, messages starting with <b>test:</b> act as a customer. Keep that chat open.</small></span></label>
+  <label class="row"><input type="checkbox" id="autoSend"><span>Auto-send<small class="warn">Off: Max pastes the reply and you press send. On: it presses send itself. WhatsApp can ban numbers that auto-reply from WhatsApp Web.</small></span></label>
+  <label>Max address <input type="text" id="apiUrl"><small>Needs the SSH tunnel running (bin/wa-tunnel).</small></label>
+  <label>Max token <input type="password" id="token" autocomplete="off"></label>
+  <label>Owner name (never sent to clients) <input type="text" id="ownerName"></label>
+  <label>This WhatsApp number <input type="text" id="businessNumber"></label>
+  <button id="save">Save</button><button id="test">Test connection</button><button id="debug">Debug this chat</button><span id="status"></span>
+  <ul id="log"></ul>
+  <script src="popup.js"></script>
+</body>
+</html>

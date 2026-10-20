@@ -1,0 +1,5 @@
+# product	unit	list_price	floor_price	min_qty	min_lead_days	target_price (optional)
+# Prices are per unit, in the CURRENCY from max.config. Fill every column. Max never offers below floor_price; anything outside these limits comes to the owner.
+keychain	piece	199	140	1	3
+desk organiser	piece	899	700	1	5
+name plate	piece	499	380	1	4

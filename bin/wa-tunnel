@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Connect the WhatsApp extension (laptop Chrome) to Max on the home server, without exposing Max to the network.
+#   wa-tunnel          keep a tunnel open: laptop 127.0.0.1:18642 -> server 127.0.0.1:8642 (Max's API)
+#   wa-tunnel token    print the front-desk key to paste into the extension (stays on this laptop)
+# MAX_HOST is your server, e.g. MAX_HOST=you@192.168.1.50 bin/wa-tunnel
+set -euo pipefail
+host=${MAX_HOST:?set MAX_HOST to your server, e.g. MAX_HOST=you@192.168.1.50}
+if [ "${1:-}" = token ]; then
+  ssh "$host" 'cat ~/.config/max-desk/key'
+  exit
+fi
+echo "Tunnel to Max on $host is open while this runs (Ctrl+C to stop)."
+exec ssh -N -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes -L 18642:127.0.0.1:8642 -L 18650:127.0.0.1:18650 "$host"

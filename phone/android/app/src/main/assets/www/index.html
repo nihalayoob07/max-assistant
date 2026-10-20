@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:">
+  <title>Max</title>
+  <link rel="stylesheet" href="fonts/rajdhani/500.css">
+  <link rel="stylesheet" href="fonts/rajdhani/600.css">
+  <link rel="stylesheet" href="fonts/rajdhani/700.css">
+  <link rel="stylesheet" href="fonts/jetbrains-mono/400.css">
+  <link rel="stylesheet" href="fonts/jetbrains-mono/600.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="mobile.css">
+</head>
+<!-- The desktop dashboard (app.js and style.css from max-assistant/app/ui, copied in at build time) in a phone
+     layout: tabs at the bottom, no window buttons, no animated core. -->
+<body>
+  <header class="bar">
+    <div class="brand">MAX</div>
+    <div class="spacer"></div>
+    <span id="pcName" hidden></span>
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">CONNECTING</span></div>
+    <div class="clock" id="clock"></div>
+  </header>
+
+  <nav class="rail">
+    <button data-view="inbox" aria-label="Inbox" class="active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1 3h6l1-3h5"/></svg>
+      <span class="badge" id="badge" hidden></span><i>Inbox</i>
+    </button>
+    <button data-view="leads" aria-label="Leads">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><i>Leads</i>
+    </button>
+    <button data-view="today" aria-label="Today">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6l1.5 1.5L8 5M4 12l1.5 1.5L8 11M4 18l1.5 1.5L8 17M11 6h9M11 12h9M11 18h9"/></svg><i>Today</i>
+    </button>
+    <button data-view="chat" aria-label="Chat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 10h8M8 13h5"/></svg><i>Chat</i>
+    </button>
+    <button data-view="setup" aria-label="Setup">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg><i>Setup</i>
+    </button>
+  </nav>
+
+  <main id="view"></main>
+
+  <script src="max-shim.js"></script>
+  <script src="app.js"></script>
+  <script src="mobile.js"></script>
+</body>
+</html>

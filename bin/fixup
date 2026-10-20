@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Re-apply Max's setup inside the sandbox from max.config: skills, SOUL.md, scripts, your businesses, policies,
+# cron jobs and the NemoClaw/Hermes workarounds. Safe to run any time; run it after editing max.config or a
+# business folder, and after any NemoClaw onboarding (which regenerates /sandbox/.hermes).
+#   bin/fixup        (also on the PATH as max-fixup after bin/install)
+set -euo pipefail
+here=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+export PATH="$HOME/.local/bin:$PATH"
+[ -f "$here/max.config" ] || { echo "No max.config yet: run bin/install first (or copy max.config.example to max.config)." >&2; exit 1; }
+. "$here/max.config"
+SANDBOX=${SANDBOX:-max}
+[[ ${TELEGRAM_USER_ID:-} =~ ^[0-9]+$ ]] || { echo "max.config: TELEGRAM_USER_ID must be your numeric Telegram ID (ask @userinfobot)" >&2; exit 1; }
+[ -f "/usr/share/zoneinfo/${TIMEZONE:-}" ] || { echo "max.config: TIMEZONE '${TIMEZONE:-}' is not a time zone (see timedatectl list-timezones)" >&2; exit 1; }
+nh() { nemohermes "$SANDBOX" "$@"; }
+x() { nh exec -- "$@"; }
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+
+# Owner settings for the scripts in the sandbox (they source this file). Single-quoted for the shell.
+q() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
+{ echo "OWNER_NAME=$(q "${OWNER_NAME:-}")"; echo "MAX_TZ=$(q "$TIMEZONE")"; echo "CURRENCY=$(q "${CURRENCY:-₹}")"
+  echo "BRIEFING_CITY=$(q "${CITY:-}")"; echo "MODEL=$(q "${MODEL:-}")"; } > "$tmp/max.env"
+
+# SOUL.md and skills carry {{OWNER}}, {{TZ}} and {{CURRENCY}}: fill them in on the way into the sandbox.
+render() { OWNER="${OWNER_NAME:-the owner}" TZN="$TIMEZONE" CUR="${CURRENCY:-₹}" \
+  perl -pe 's/\{\{OWNER\}\}/$ENV{OWNER}/g; s/\{\{TZ\}\}/$ENV{TZN}/g; s/\{\{CURRENCY\}\}/$ENV{CUR}/g' "$1" > "$2"; }
+for s in "$here"/skills/*/; do
+  name=$(basename "$s"); mkdir -p "$tmp/skills/$name"
+  for f in "$s"*; do render "$f" "$tmp/skills/$name/$(basename "$f")"; done
+  x rm -rf "/sandbox/.hermes/skills/$name"
+  nh skill install "$tmp/skills/$name/"
+done
+render "$here/SOUL.md" "$tmp/SOUL.md"
+nh upload "$tmp/SOUL.md" /sandbox/.hermes/SOUL.md
+x mkdir -p /sandbox/.hermes/scripts /sandbox/.hermes/workspace/notes/research
+nh upload "$tmp/max.env" /sandbox/.hermes/workspace/max.env
+for f in "$here"/scripts/*.sh "$here"/scripts/*.py; do nh upload "$f" "/sandbox/.hermes/scripts/$(basename "$f")"; done
+x sh -c 'chmod +x ~/.hermes/scripts/*.sh ~/.hermes/scripts/*.py'
+
+# Business profiles and deal policies: owner-written, synced one way into the sandbox (leads and client notes
+# there are left alone). Without any in private/business/, the example shop goes in so there's something to try.
+biz_src="$here/private/business"; ls -d "$biz_src"/*/ >/dev/null 2>&1 || biz_src="$here/business-template"
+for d in "$biz_src"/*/; do
+  slug=$(basename "$d"); dst=/sandbox/.hermes/workspace/business/$slug
+  [[ $slug =~ ^[a-z0-9-]+$ ]] || { echo "skipping business folder '$slug': use lowercase letters, digits and dashes" >&2; continue; }
+  x sh -c "mkdir -p '$dst' && find '$dst' -maxdepth 1 -name '*.md' -delete && rm -f '$dst/policy.tsv'"   # keeps orders.tsv
+  for f in "$d"*; do nh upload "$f" "$dst/$(basename "$f")"; done
+done
+for p in weather public-reference; do nh policy add "$p" --yes; done
+
+# NemoClaw keeps the gateway's state.db in ~/.hermes/runtime, and Hermes resolves the agent home from that
+# db's folder, so without these links the gateway ignores SOUL.md, custom skills and memories.
+x sh -c 'cd ~/.hermes/runtime && for f in SOUL.md skills memories; do [ -e "$f" ] || ln -s "../$f" "$f"; done'
+
+# Telegram: only you may talk to Max. Settings go in config.yaml or as known keys: NemoClaw refuses to start
+# Hermes if ~/.hermes/.env holds keys it doesn't know. Never turn on gateway.multiplex_profiles (breaks the NVIDIA key).
+x sh -c "hermes config set platforms.telegram.enabled true >/dev/null
+  grep -q '^TELEGRAM_ALLOWED_USERS=' ~/.hermes/.env || echo 'TELEGRAM_ALLOWED_USERS=$TELEGRAM_USER_ID' >> ~/.hermes/.env
+  if env | grep -q '^TAVILY_API_KEY='; then hermes config set web.backend tavily >/dev/null; fi"
+# No sandbox browser for the API: Max kept "playing" videos in it instead of on the owner's screen.
+x sed -i '/^  api_server:/,/^  [a-z_]*:$/{/^    - browser$/d}' /sandbox/.hermes/config.yaml
+
+# Cron runs on the sandbox's UTC clock: turn your local times into UTC. The offset is fixed, so re-run
+# max-fixup after a daylight-saving change; it updates existing jobs in place.
+utc() { date -u -d "TZ=\"$TIMEZONE\" $1" "$2"; }
+brief=$(utc "$(TZ=$TIMEZONE date +%F) ${BRIEFING_TIME:-06:30}" '+%-M %-H')                  # minute hour
+read -r rm rh rd <<<"$(utc "$(TZ=$TIMEZONE date -d monday +%F) ${REPORT_TIME:-09:00}" '+%-M %-H %w')"   # a Monday
+{ cat <<'EOF'
+# job <name> <schedule> <deliver> <prompt> <skill> <script>: update the job's schedule if it exists, else create it.
+job() { id=$(hermes cron list 2>/dev/null | awk -v n="$1" '$1 ~ /^[0-9a-f]+$/ && NF == 2 { id = $1 } $1 == "Name:" && $2 == n { print id }')
+  if [ -n "$id" ]; then hermes cron edit "$id" --schedule "$2" --deliver "$3" >/dev/null
+  else hermes cron create "$2" "$4" --name "$1" --skill "$5" --script "$6" --deliver "$3" >/dev/null; fi; }
+EOF
+  printf 'job morning-briefing %q %q %q morning-briefing briefing_data.sh\n' "$brief * * *" "telegram:$TELEGRAM_USER_ID" "Write today's morning briefing from the injected data."
+  printf 'job weekly-business-report %q %q %q business-desk business_report.sh\n' "$rm $rh * * $rd" "telegram:$TELEGRAM_USER_ID" "Write this week's business report from the injected data."
+} > "$tmp/cron.sh"
+nh upload "$tmp/cron.sh" /tmp/max-cron.sh
+x sh /tmp/max-cron.sh
+
+# Max's hands (DESKTOP=yes, see hands/README.md): the shared secret for pc.sh, the default computer, and the
+# sandbox rule that lets curl and Python reach only the helpers' endpoints.
+if [ "${DESKTOP:-no}" = yes ] && [ -f ~/.config/max-hands/token ]; then
+  nh upload ~/.config/max-hands/token /sandbox/.hermes/workspace/.hands_token
+  x sh -c 'chmod 600 ~/.hermes/workspace/.hands_token; [ -f ~/.hermes/workspace/active_pc ] || echo laptop > ~/.hermes/workspace/active_pc'
+  bins=(--binary /usr/bin/curl --binary /usr/local/bin/curl --binary /usr/bin/python3.13 --binary /opt/hermes/.venv/bin/python3)
+  h=host.openshell.internal
+  openshell -g nemoclaw policy update "$SANDBOX" --rule-name allow_host_openshell_internal_18700 --add-endpoint $h:18700::rest:enforce \
+    --add-allow "$h:18700:GET:/health" --add-allow "$h:18700:POST:/run" --add-allow "$h:18700:GET:/screen" --add-allow "$h:18700:POST:/mouse" "${bins[@]}" >/dev/null
+  openshell -g nemoclaw policy update "$SANDBOX" --rule-name allow_host_openshell_internal_18701 --add-endpoint $h:18701::rest:enforce \
+    --add-allow "$h:18701:GET:/health" --add-allow "$h:18701:POST:/run" "${bins[@]}" >/dev/null
+fi
+
+nh gateway restart
+echo "Max fixup done."

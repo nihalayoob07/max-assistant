@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:">
+  <title>Max · Voice</title>
+  <link rel="stylesheet" href="../node_modules/@fontsource/rajdhani/600.css">
+  <link rel="stylesheet" href="../node_modules/@fontsource/rajdhani/700.css">
+  <link rel="stylesheet" href="../node_modules/@fontsource/jetbrains-mono/400.css">
+  <link rel="stylesheet" href="voice.css">
+</head>
+<body>
+  <div class="dim" id="dim"></div>
+  <div class="stage">
+    <div class="readouts left" id="readL"></div>
+    <div class="holo">
+      <div class="label">MAX</div>
+      <div class="pc" id="pc">LAPTOP</div>
+      <div id="core" class="core listening"></div>
+      <div class="state" id="state">Initialising…</div>
+      <div class="you" id="you"></div>
+      <div class="reply" id="reply"></div>
+    </div>
+    <div class="readouts right" id="readR"></div>
+  </div>
+  <div class="foot">Speak naturally · click the core to stop Max · click outside or Esc to tuck it away</div>
+  <script src="orb.js"></script>
+  <script src="speech.js"></script>
+  <script src="mic.js"></script>
+  <script src="voice.js"></script>
+</body>
+</html>

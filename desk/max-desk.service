@@ -1,0 +1,13 @@
+# Front-desk relay for customer messages (systemd user service on the server).
+[Unit]
+Description=Max front desk relay
+After=network-online.target
+
+[Service]
+EnvironmentFile=-%h/max-assistant/max.config
+ExecStart=/usr/bin/node %h/max-assistant/desk/desk-relay.js --listen 127.0.0.1:18650 --key-file %h/.config/max-desk/key
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

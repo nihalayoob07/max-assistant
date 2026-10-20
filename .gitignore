@@ -1,0 +1,27 @@
+# Backups and exports of sandbox state (notes, memory, hermes.env with the local API key)
+max-backup-*/
+max-laptop-final-*/
+*.bak
+*~
+
+# Secrets never belong in this repo: keys live only in the OpenShell gateway
+hermes.env
+.env
+*.env
+briefing.env
+
+.DS_Store
+Thumbs.db
+
+# Real business profiles and deal policies (prices, floors) stay private; bin/fixup syncs them into the sandbox
+private/
+
+# WhatsApp extension local settings (holds the Max API token)
+whatsapp-extension/config.local.json
+
+# Shared secret for the hands helpers (laptop copy)
+hands/token.local
+app/dist/
+
+# Your settings (bin/install makes it from max.config.example)
+max.config

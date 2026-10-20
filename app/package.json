@@ -1,0 +1,91 @@
+{
+  "name": "max-desktop",
+  "productName": "Max",
+  "version": "0.1.0",
+  "description": "Desktop HUD for Max, the private business assistant",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.0.0",
+    "@fontsource/rajdhani": "^5.0.0",
+    "@huggingface/transformers": "^4.3.1",
+    "kokoro-js": "^1.2.1"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  },
+  "build": {
+    "appId": "com.nihal.max",
+    "productName": "Max",
+    "copyright": "Copyright © 2026 Nihal",
+    "files": [
+      "main.js",
+      "preload.js",
+      "youtube.js",
+      "duck.js",
+      "proactive.js",
+      "pc.js",
+      "ui/**/*",
+      "assets/**/*",
+      "package.json",
+      "!**/onnxruntime-node/bin/napi-v*/{darwin,linux}/**",
+      "!**/onnxruntime-node/bin/napi-v*/win32/arm64/**",
+      "!**/.cache/**",
+      "!**/onnxruntime-web/**",
+      "!**/*.map",
+      "!**/@huggingface/transformers/dist/*.web*",
+      "!**/@huggingface/transformers/dist/*.min.*",
+      "!**/@huggingface/transformers/types/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../hands/hands.js",
+        "to": "hands/hands.js"
+      }
+    ],
+    "asarUnpack": [
+      "**/*.node",
+      "**/onnxruntime-node/**",
+      "**/@img/**",
+      "**/sharp/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Max",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Max-Setup.${ext}"
+    }
+  },
+  "overrides": {
+    "sharp": "0.35.5"
+  }
+}

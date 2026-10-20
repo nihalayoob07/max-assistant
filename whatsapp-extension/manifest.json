@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Max for WhatsApp",
+  "version": "0.5.5",
+  "description": "Hands new WhatsApp Web messages from customers to Max (your private assistant) and puts its replies in the chat.",
+  "minimum_chrome_version": "111",
+  "permissions": [
+    "storage",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "max-whatsapp@max-assistant.local",
+      "strict_min_version": "121.0"
+    }
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Max for WhatsApp"
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://web.whatsapp.com/*"
+      ],
+      "js": [
+        "content/common.js",
+        "content/whatsapp.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

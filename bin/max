@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Drive Max's sandbox from the server.
+#   max ask "prompt"        one chat turn via the Hermes OpenAI-compatible API
+#   max backup [file]       notes, memory, leads and calendar to a .tgz (default ~/max-backup-<date>.tgz)
+#   max restore <file>      put a backup back (overwrites those files in the sandbox)
+#   max <anything else>     passthrough to `nemohermes <sandbox> ...` (exec, status, recover, logs, policy, upload...)
+set -euo pipefail
+here=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+[ -f "$here/max.config" ] && . "$here/max.config"
+SANDBOX=${SANDBOX:-max}
+export PATH="$HOME/.local/bin:$PATH"
+nh() { nemohermes "$@" 2> >(grep -v -e ExperimentalWarning -e trace-warnings >&2); }
+
+case "${1:-}" in
+ask)
+  shift
+  token=$(nh "$SANDBOX" gateway-token --quiet | tail -1)
+  body=$(python3 -c 'import json,sys; print(json.dumps({"model":"hermes-agent","messages":[{"role":"user","content":sys.argv[1]}]}))' "$*")
+  resp=$(curl -sS --max-time 600 http://127.0.0.1:8642/v1/chat/completions \
+    -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$body") || {
+    echo "API unreachable; trying recover" >&2; nh "$SANDBOX" recover >&2; exit 1; }
+  printf '%s' "$resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["choices"][0]["message"]["content"] if "choices" in d else d)'
+  ;;
+backup)
+  out=${2:-$HOME/max-backup-$(date +%Y%m%d-%H%M).tgz}
+  # Base64 through exec keeps the archive intact; the sandbox has no other way out to the host.
+  nh "$SANDBOX" exec -- sh -c 'cd ~/.hermes && tar czf - workspace memories 2>/dev/null | base64 -w0' | base64 -d > "$out"
+  tar tzf "$out" >/dev/null && echo "Backed up to $out ($(du -h "$out" | cut -f1))"
+  ;;
+restore)
+  f=${2:?usage: max restore <backup.tgz>}
+  tar tzf "$f" >/dev/null
+  nh "$SANDBOX" upload "$f" /tmp/max-restore.tgz
+  nh "$SANDBOX" exec -- sh -c 'cd ~/.hermes && tar xzf /tmp/max-restore.tgz && rm /tmp/max-restore.tgz'
+  echo "Restored $f. Run max-fixup to put your current skills and settings back on top."
+  ;;
+*)
+  nh "$SANDBOX" "$@"
+  ;;
+esac
