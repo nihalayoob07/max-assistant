@@ -246,7 +246,8 @@ function pickVoice() {
 speechSynthesis.onvoiceschanged = pickVoice; pickVoice();
 
 // How names should sound: fixed here, so it never depends on Max remembering.
-const PRONOUNCE = {};   // names the voice says wrong, e.g. { Siobhan: 'Shivawn' }
+const PRONOUNCE = {};   // names the voice says wrong, e.g. { Siobhan: 'Shivawn' }: yours from SAY_NAME in max.config
+window.max.cfg?.().then((c) => { const n = c.owner.split(' ')[0]; if (n && c.sayName) PRONOUNCE[n] = c.sayName; }).catch(() => {});
 const sayNames = (t) => t.replace(/\b[\p{L}]+\b/gu, (w) => {
   const k = Object.keys(PRONOUNCE).find((n) => n.toLowerCase() === w.toLowerCase());
   return k ? PRONOUNCE[k] : w;

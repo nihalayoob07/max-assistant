@@ -161,7 +161,8 @@ async function run(cmd, { hands, sandbox, notify, showDashboard }) {
   return null;
 }
 
-module.exports = { parse, run };
+const addSites = (more) => Object.assign(SITES, more);   // SITES from max.config
+module.exports = { parse, run, addSites };
 
 // node pc.js --self-test
 if (require.main === module && process.argv.includes('--self-test')) {

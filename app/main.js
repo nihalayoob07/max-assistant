@@ -17,6 +17,13 @@ function serverConfig() {
   cfgReady ||= run(['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', HOST, 'cat ~/max-assistant/max.config'], 20000).then((out) => {
     for (const m of out.matchAll(/^([A-Z_]+)=(?:"([^"]*)"|'([^']*)'|(\S*))/gm)) CFG[m[1]] = m[2] ?? m[3] ?? m[4];
     NAMES = [...(CFG.OWNER_NAME || '').split(' '), CFG.CITY || '', ...EXTRA_NAMES].filter((n) => n.length >= 3);
+    // VOICE_FIXES "Right Name=heard as|heard as; ...": each phrase matches with any spaces or dashes between its words.
+    const words = (p) => p.trim().toLowerCase().split(/[\s-]+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s-]*');
+    PHRASES = (CFG.VOICE_FIXES || '').split(';').map((e) => e.split(/=(.*)/s)).filter(([n, alts]) => n?.trim() && alts)
+      .map(([n, alts]) => [new RegExp(`\\b(?:${[n, ...alts.split('|')].filter((a) => a.trim()).map(words).join('|')})\\b`, 'gi'), n.trim()]);
+    // SITES "name=address; ...": more "open ..." shortcuts for the PC commands.
+    pcCommands.addSites(Object.fromEntries((CFG.SITES || '').split(';').map((e) => e.split(/=(.*)/s)).filter(([n, u]) => n?.trim() && /^https?:\/\//.test(u?.trim() || ''))
+      .map(([n, u]) => [n.trim().toLowerCase(), u.trim()])));
   }).catch((e) => { cfgReady = null; throw e; });
   return cfgReady;
 }
@@ -324,6 +331,7 @@ async function transcribe(buffer) {
 // that name: yours and your city from max.config, plus MAX_NAMES (comma separated).
 const EXTRA_NAMES = (process.env.MAX_NAMES || '').split(',').map((s) => s.trim()).filter(Boolean);
 let NAMES = EXTRA_NAMES;
+let PHRASES = [];   // [regex, name] from VOICE_FIXES: multi-word names Whisper splits into common words
 function editDistance(a, b) {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
   for (let j = 1; j <= b.length; j++) d[0][j] = j;
@@ -332,6 +340,7 @@ function editDistance(a, b) {
   return d[a.length][b.length];
 }
 function fixNames(text) {
+  for (const [re, name] of PHRASES) text = text.replace(re, name);
   text = text.replace(/\b[A-Za-z](?:[\s.-]+[A-Za-z]\b){2,}/g, (m) => m.replace(/[\s.-]+/g, ''));   // "A L E X" -> "ALEX"
   return text.replace(/\b[A-Za-z]{4,}\b/g, (w) => {
     const hit = NAMES.find((n) => w.toLowerCase() !== n.toLowerCase() && editDistance(w.toLowerCase(), n.toLowerCase()) <= (n.length >= 8 ? 2 : 1));
@@ -683,6 +692,7 @@ async function setActive(pc) {
 ipcMain.handle('pc', (_e, what) => (what === 'get' ? activePc : setActive(what === 'toggle' ? (activePc === 'laptop' ? 'server' : 'laptop') : what)));
 
 ipcMain.handle('connect', () => connect());
+ipcMain.handle('cfg', () => serverConfig().then(() => ({ owner: CFG.OWNER_NAME || '', sayName: CFG.SAY_NAME || '' })));
 ipcMain.handle('load', async () => ({ ...parse(await sandbox(READ)), cfg: { currency: CFG.CURRENCY, locale: CFG.LOCALE, tz: CFG.TIMEZONE } }));
 
 // ---------- Proactive Max ----------

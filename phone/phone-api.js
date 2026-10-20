@@ -29,7 +29,8 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 // The owner's settings: max.config, passed in by the systemd unit (EnvironmentFile).
 const SANDBOX = process.env.SANDBOX || 'max', TZ = process.env.TIMEZONE || 'UTC';
 const OWNER = (process.env.OWNER_NAME || '').split(' ')[0];
-const HI = OWNER ? `Hi ${OWNER}, it's Max.` : "Hi, it's Max.";
+const SAY = process.env.SAY_NAME || OWNER;   // how the phone's voice should say the name
+const HI = SAY ? `Hi ${SAY}, it's Max.` : "Hi, it's Max.";
 const money = (n) => (process.env.CURRENCY || '₹') + Math.round(Number(n)).toLocaleString(process.env.LOCALE || 'en-IN');
 const file = (f) => path.join(CFG, f);
 const read = (f) => { try { return fs.readFileSync(file(f), 'utf8').trim(); } catch { return ''; } };
@@ -329,13 +330,14 @@ const person = (c) => (/^\+?\d[\d\s-]{6,}$/.test(String(c || '')) ? 'a client' :
 // The morning brief, from the dashboard data and any shop's orders table (skills/shop-orders). Pure, so it's testable.
 function brief(data, orders) {
   const today = data.today;
-  const s = [`Good morning${OWNER ? ` ${OWNER}` : ''}, it's Max. Here's your day.`];
+  const s = [`Good morning${SAY ? ` ${SAY}` : ''}, it's Max. Here's your day.`];
+  const shops = [...new Set(orders.map((o) => o.shop))], shop = shops.length === 1 && shops[0] ? `${shops[0]}: ` : '';
   const toPrint = orders.filter((o) => o.status === 'paid'), printing = orders.filter((o) => o.status === 'printing');
   const unpaid = orders.filter((o) => o.status === 'pending');
-  if (toPrint.length) s.push(`${plural(toPrint.length, 'order')} to make. ${toPrint.slice(0, 3).map((o) => `${o.items} for ${o.customer.split(' ')[0]}, from ${o.placed.split(/ \d{4}/)[0]}`).join('. ')}${toPrint.length > 3 ? ', and more' : ''}.`);
+  if (toPrint.length) s.push(`${shop}${plural(toPrint.length, 'order')} to make. ${toPrint.slice(0, 3).map((o) => `${o.items} for ${o.customer.split(' ')[0]}, from ${o.placed.split(/ \d{4}/)[0]}`).join('. ')}${toPrint.length > 3 ? ', and more' : ''}.`);
   if (printing.length) s.push(`${plural(printing.length, 'order')} still printing.`);
   if (unpaid.length) s.push(`${plural(unpaid.length, 'order')} waiting for payment.`);
-  if (orders.length && !toPrint.length && !printing.length) s.push('No shop orders waiting.');
+  if (orders.length && !toPrint.length && !printing.length) s.push(`No orders waiting${shop ? ` at ${shops[0]}` : ''}.`);
   const evs = data.events.filter((e) => e.date === today).sort((a, b) => a.start.localeCompare(b.start));
   if (evs.length) s.push(`On your calendar: ${list(evs.map((e) => (e.start === 'allday' ? e.title : `${e.title} at ${hm12(e.start)}`)))}.`);
   else s.push('Your calendar is clear today.');
@@ -353,10 +355,12 @@ function brief(data, orders) {
   s.push('Anything you want me to do?');
   return s.join(' ');
 }
-const ORDERS = "echo ref; awk 'FNR > 1' ~/.hermes/workspace/business/*/orders.tsv 2>/dev/null";
+// Each business's orders, with the shop's name (its profile's first line) in front.
+const ORDERS = `echo shop; for f in ~/.hermes/workspace/business/*/orders.tsv; do [ -f "$f" ] || continue
+  n=$(head -1 "\${f%/orders.tsv}/profile.md" 2>/dev/null | sed 's/^# *//'); awk -v n="$n" -F'\\t' 'FNR > 1 { print n "\\t" $0 }' "$f"; done`;
 const parseOrders = (out) => out.split('\n').slice(1).filter((l) => l.trim()).map((l) => {
-  const [ref, placed, status, customer, , , items, total] = l.split('\t');
-  return { ref, placed, status, customer: customer || 'a customer', items: (items || '').replace(/ x1\b/g, '').replace(/;/g, ','), total };
+  const [shop, ref, placed, status, customer, , , items, total] = l.split('\t');
+  return { shop, ref, placed, status, customer: customer || 'a customer', items: (items || '').replace(/ x1\b/g, '').replace(/;/g, ','), total };
 });
 
 // What Max says when the call is answered, and the buttons that answer it without talking.

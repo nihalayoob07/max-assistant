@@ -6,6 +6,8 @@
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 rt=$(command -v podman || command -v docker) || { echo "needs podman or docker" >&2; exit 1; }
+# File modes as git stores them: a Windows or synced checkout shows every file as executable, which hid a missing +x.
+git -C "$repo" ls-files -s > "$repo/.git/max-modes"
 exec "$rt" run --rm -i -v "$repo:/repo:ro" docker.io/library/ubuntu:24.04 bash -s <<'OUTER'
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -60,7 +62,9 @@ for s in docker systemctl loginctl sudo npm; do printf '#!/bin/bash\necho "%s $*
 chmod +x /stubs/* /stubs/sandbox/* /stubs/later/*
 
 # ---- install, as the owner would ----
-cp -r /repo /home/alex/src && rm -rf /home/alex/src/private /home/alex/src/max.config && chown -R alex /home/alex/src
+cp -r /repo /home/alex/src && rm -rf /home/alex/src/private /home/alex/src/max.config
+while read -r mode _ _ f; do chmod "$([ "$mode" = 100755 ] && echo 755 || echo 644)" "/home/alex/src/$f"; done < /repo/.git/max-modes
+chown -R alex /home/alex/src
 answers='Mary Jane
 abc
 123456789

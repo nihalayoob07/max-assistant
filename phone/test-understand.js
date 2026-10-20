@@ -27,11 +27,11 @@ console.log('ok');
 
 // The morning brief reads orders to print, today's calendar, what's due, and what waits on the owner.
 const { brief, parseOrders } = require('./phone-api');
-const orders = parseOrders('ref\tplaced\tstatus\tcustomer\n' +
-  'PV-1\t20 Oct\tpaid\tSam Lee\t+91\tKA\tPhone Stand x2; Keychain x1\t₹900\nPV-2\t19 Oct\tpending\tRavi\t\t\tLamp x1\t₹1,200\n');
+const orders = parseOrders('shop\tref\tplaced\tstatus\tcustomer\n' +
+  'Test Shop\tPV-1\t20 Oct\tpaid\tSam Lee\t+91\tKA\tPhone Stand x2; Keychain x1\t₹900\nTest Shop\tPV-2\t19 Oct\tpending\tRavi\t\t\tLamp x1\t₹1,200\n');
 const b = brief({ today: '2026-10-21', events: [{ id: 'E1', date: '2026-10-21', start: '10:30', title: 'Call with the bakery' }],
   todos: ['pay the electricity bill (due 2026-10-20, added 2026-10-15)', 'buy filament (added 2026-10-18)'],
   leads: [{ id: 'L1', status: 'escalated' }, { id: 'L2', contact: 'Jordan', status: 'talking', next: '2026-10-21' }] }, orders);
-for (const want of ['1 order to make. Phone Stand x2, Keychain for Sam, from 20 Oct', '1 order waiting for payment', 'Call with the bakery at 10:30 a m',
+for (const want of ['Test Shop: 1 order to make. Phone Stand x2, Keychain for Sam, from 20 Oct', '1 order waiting for payment', 'Call with the bakery at 10:30 a m',
   'pay the electricity bill, which is overdue', '1 other thing on your list', '1 deal waiting', 'Follow-ups due with Jordan']) assert(b.includes(want), `${want}\n${b}`);
 console.log('brief ok');

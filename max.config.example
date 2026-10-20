@@ -19,6 +19,14 @@ LOCALE=en-IN
 BRIEFING_TIME=06:30
 REPORT_TIME=09:00
 
+# --- Voice (optional; desktop app and phone calls) ---
+# How the voice should say your name, if it says it wrong, e.g. "Shivawn" for Siobhan.
+SAY_NAME=""
+# Extra "open ..." shortcuts for the desktop app: name=address pairs separated by ; e.g. "my shop=https://myshop.com;shop admin=https://myshop.com/admin"
+SITES=""
+# Names the speech recogniser mishears: Right Name=heard as|heard as; next, e.g. "Sunrise Bakery=sun rise bakery|sunrise baker"
+VOICE_FIXES=""
+
 # --- The sandbox (change only if you know why) ---
 SANDBOX=max
 # Any NVIDIA model your key can reach on build.nvidia.com.

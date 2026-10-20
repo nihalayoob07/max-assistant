@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('max', {
   connect: () => ipcRenderer.invoke('connect'),
+  cfg: () => ipcRenderer.invoke('cfg'),
   load: () => ipcRenderer.invoke('load'),
   chat: (messages) => ipcRenderer.invoke('chat', messages),
   chatStream: (id, messages) => ipcRenderer.invoke('chatStream', id, messages),

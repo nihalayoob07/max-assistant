@@ -167,6 +167,8 @@ A holographic HUD with your Inbox (decisions waiting), Chat, Leads, Calendar and
 3. Get the app: download `Max-Setup.exe` from the project's releases, or build it yourself with Node.js 22 installed: `cd app`, `npm install`, `npm run dist` → `app/dist/Max-Setup.exe`.
 4. Install and start it. The first time, Notepad opens `server.txt`: write your SSH login (`you@192.168.1.50`), save, start Max again.
 
+If the voice says your name wrong, or speech recognition keeps mishearing your shop's name, set `SAY_NAME`, `VOICE_FIXES` and extra "open ..." shortcuts (`SITES`) in `max.config` and restart the app; `SAY_NAME` also applies to phone calls.
+
 The app opens SSH tunnels to the server only while it runs; Max's API is never exposed to the network. "Hands" only accepts commands from your own Max, refuses catastrophic commands (wiping disks, shutdown...) until you confirm, and logs everything to `~/.max-hands-*.log`. Away from home, put the PC and server on [Tailscale](https://tailscale.com) and use the server's Tailscale name in `server.txt`.
 
 ## 8. Android app (optional)
