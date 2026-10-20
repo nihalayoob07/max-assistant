@@ -159,7 +159,10 @@ class CallActivity : Activity() {
         })
         audio.mode = AudioManager.MODE_IN_COMMUNICATION
         audio.isSpeakerphoneOn = speaker
-        t.speak(text.replace("₹", "rupees "), TextToSpeech.QUEUE_FLUSH, null, id)
+        // The screen shows the text as written; the voice uses the server's pronunciation hints (SAY_NAME).
+        var spoken = text.replace("₹", "rupees ")
+        deal?.optJSONObject("pronounce")?.let { p -> p.keys().forEach { k -> spoken = spoken.replace(Regex("\\b${Regex.escape(k)}\\b"), p.getString(k)) } }
+        t.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, id)
     }
 
     private fun listen() {

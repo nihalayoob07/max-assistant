@@ -29,8 +29,9 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 // The owner's settings: max.config, passed in by the systemd unit (EnvironmentFile).
 const SANDBOX = process.env.SANDBOX || 'max', TZ = process.env.TIMEZONE || 'UTC';
 const OWNER = (process.env.OWNER_NAME || '').split(' ')[0];
-const SAY = process.env.SAY_NAME || OWNER;   // how the phone's voice should say the name
-const HI = SAY ? `Hi ${SAY}, it's Max.` : "Hi, it's Max.";
+// The text shows the real name; the app's voice says it as SAY_NAME (sent as a pronunciation hint with each call).
+const PRONOUNCE = OWNER && process.env.SAY_NAME ? { [OWNER]: process.env.SAY_NAME } : {};
+const HI = OWNER ? `Hi ${OWNER}, it's Max.` : "Hi, it's Max.";
 const money = (n) => (process.env.CURRENCY || '₹') + Math.round(Number(n)).toLocaleString(process.env.LOCALE || 'en-IN');
 const file = (f) => path.join(CFG, f);
 const read = (f) => { try { return fs.readFileSync(file(f), 'utf8').trim(); } catch { return ''; } };
@@ -330,7 +331,7 @@ const person = (c) => (/^\+?\d[\d\s-]{6,}$/.test(String(c || '')) ? 'a client' :
 // The morning brief, from the dashboard data and any shop's orders table (skills/shop-orders). Pure, so it's testable.
 function brief(data, orders) {
   const today = data.today;
-  const s = [`Good morning${SAY ? ` ${SAY}` : ''}, it's Max. Here's your day.`];
+  const s = [`Good morning${OWNER ? ` ${OWNER}` : ''}, it's Max. Here's your day.`];
   const shops = [...new Set(orders.map((o) => o.shop))], shop = shops.length === 1 && shops[0] ? `${shops[0]}: ` : '';
   const toPrint = orders.filter((o) => o.status === 'paid'), printing = orders.filter((o) => o.status === 'printing');
   const unpaid = orders.filter((o) => o.status === 'pending');
@@ -515,7 +516,7 @@ const ROUTES = {
   'POST /cal': async (j) => ({ out: await cal(j) }),
   'POST /chat': async (j) => ({ reply: await chat(Array.isArray(j.messages) ? j.messages : []) }),
   'POST /token': async (j) => { if (!/^[\w:-]{20,4096}$/.test(j.token || '')) throw new Error('bad token'); write('fcm-token', j.token); return { ok: true }; },
-  'GET /call': async (_j, q) => { const { deal: _d, ...c } = await callInfo(callId(q.get('id'))); return c; },
+  'GET /call': async (_j, q) => { const { deal: _d, ...c } = await callInfo(callId(q.get('id'))); return { ...c, pronounce: PRONOUNCE }; },
   'POST /call/answer': (j) => answer(callId(j.id), String(j.text || '').slice(0, 500)),
   'POST /call/decide': (j) => decideCall(callId(j.id), j),
   'POST /ring': async (j) => { await ring(callId(j.id)); return { ok: true }; },
