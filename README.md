@@ -8,6 +8,15 @@ Built for the **NVIDIA Personal AI Track**: NVIDIA **Nemotron** (open model) + N
 
 **→ Set up your own: [docs/SETUP.md](docs/SETUP.md)** (about 45 minutes, no programming).
 
+## How Max uses NVIDIA Nemotron
+
+- **Nemotron does all of Max's thinking.** Every Telegram message, customer enquiry, research question, morning brief and voice command goes to `nvidia/nemotron-3.5-super-vl-120b-a12b` on build.nvidia.com. It plans the tool calls (calendar, leads, deal gate, search), writes the replies and haggles with customers.
+- **Reasoning stays on.** With Nemotron's reasoning switched off (`agent.reasoning_effort none`), replies came back in 21 s instead of about 90 s, but Max made up prices and skipped house rules. Max keeps reasoning on and puts every hard limit in code (`scripts/deal_check.sh`), so the model negotiates but never decides a price on its own.
+- **Open model, so it can run fully offline.** Because Nemotron is open, the same setup can switch to Nemotron 3 Nano 4B on local Ollama with one command (`nemohermes inference set`), so no conversation text leaves your server at all.
+- **Checked at install.** `bin/install` tests your NVIDIA key against the configured Nemotron model before onboarding. Hosted models can be retired per account, and a 404 there means pick another model.
+
+**Nebius Token Factory:** not used. No Nebius credits were available during the hackathon, so Max runs on build.nvidia.com. Inference is OpenAI-compatible, so moving to Token Factory is a provider switch (`custom` provider, endpoint `https://api.tokenfactory.nebius.com/v1`, plus Nebius's Nemotron model ID). No other Nebius tools or services are used.
+
 ## What it does
 
 | | How you use it |
@@ -107,3 +116,7 @@ No secrets are stored in this repo or in `max.config`.
 
 Max started as the author's own assistant and has run 24/7 on a 3.7 GB home server since 2026-10-17. Demo script: [`DEMO.md`](DEMO.md). Write-up: [`SUBMISSION.md`](SUBMISSION.md).
 
+
+## License
+
+MIT, see [LICENSE](LICENSE).
