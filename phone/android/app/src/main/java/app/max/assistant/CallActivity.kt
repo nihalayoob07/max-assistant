@@ -4,14 +4,10 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.ColorFilter
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.PixelFormat
 import android.graphics.Typeface
-import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.os.Build
@@ -42,12 +38,13 @@ import kotlin.concurrent.thread
  *  understood, and only acts on a "yes". The buttons do the same without talking. */
 class CallActivity : Activity() {
 
-    private val bg = Color.parseColor("#010507")
-    private val cyan = Color.parseColor("#38DBE6")
-    private val amber = Color.parseColor("#FF8A1E")
-    private val red = Color.parseColor("#FF3B4E")
-    private val ink = Color.parseColor("#E2F9FB")
-    private val muted = Color.parseColor("#6F9BA3")
+    // The dashboard's palette: jet black, cerulean for structure, rose for the action, red for danger.
+    private val bg = Color.parseColor("#0A0A0A")
+    private val blue = Color.parseColor("#4FB8E0")
+    private val rose = Color.parseColor("#FF2D95")
+    private val red = Color.parseColor("#FF5A5A")
+    private val ink = Color.parseColor("#EDEDEE")
+    private val muted = Color.parseColor("#8B9098")
     private val condensed = Typeface.create("sans-serif-condensed", Typeface.BOLD)
     private val mono = Typeface.MONOSPACE
 
@@ -106,7 +103,7 @@ class CallActivity : Activity() {
     private fun load() {
         runCatching { JSONObject(Api.call(this, "GET", "/call?id=" + java.net.URLEncoder.encode(id, "UTF-8"))) }
             .onSuccess { d -> runOnUiThread { deal = d; showCall(d); if (answered && !ttsStarted) begin() } }
-            .onFailure { e -> runOnUiThread { status.text = "CAN'T REACH THE SERVER"; line("Max", "I can't get this call's details (${e.message}). It's on Telegram too.") } }
+            .onFailure { e -> runOnUiThread { status.text = "Can't reach the server"; line("Max", "I can't get this call's details (${e.message}). It's on Telegram too.") } }
     }
     private var ttsStarted = false
 
@@ -115,7 +112,7 @@ class CallActivity : Activity() {
         CallService.answer(this)
         ringRow.visibility = View.GONE
         callRow.visibility = View.VISIBLE
-        status.text = "CONNECTING"
+        status.text = "Connecting…"
         audio.mode = AudioManager.MODE_IN_COMMUNICATION
         audio.isSpeakerphoneOn = speaker
         tts = TextToSpeech(this) { ok ->
@@ -148,7 +145,7 @@ class CallActivity : Activity() {
 
     private fun say(text: String, then: (() -> Unit)? = null) {
         line("Max", text)
-        status.text = "MAX IS SPEAKING"
+        status.text = "Max is speaking"
         val t = tts
         if (t == null || !ttsReady) { handler.postDelayed({ then?.invoke() }, 1500); return }
         val id = System.nanoTime().toString()
@@ -168,10 +165,10 @@ class CallActivity : Activity() {
     private fun listen() {
         if (busy || isFinishing) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED || !SpeechRecognizer.isRecognitionAvailable(this)) {
-            status.text = "USE THE BUTTONS"
+            status.text = "Use the buttons"
             return
         }
-        status.text = if (pending != null) "SAY YES OR NO" else "LISTENING…"
+        status.text = if (pending != null) "Say yes or no" else "Listening…"
         audio.mode = AudioManager.MODE_NORMAL   // Google's recognizer hears silence in call mode
         recognizer?.destroy()
         recognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
@@ -188,10 +185,10 @@ class CallActivity : Activity() {
                     missed(error)
                 }
                 override fun onReadyForSpeech(p: Bundle?) {}
-                override fun onBeginningOfSpeech() { status.text = "HEARING YOU…" }
+                override fun onBeginningOfSpeech() { status.text = "Hearing you…" }
                 override fun onRmsChanged(v: Float) {}
                 override fun onBufferReceived(b: ByteArray?) {}
-                override fun onEndOfSpeech() { status.text = "THINKING…" }
+                override fun onEndOfSpeech() { status.text = "Thinking…" }
                 override fun onPartialResults(b: Bundle?) {}
                 override fun onEvent(t: Int, b: Bundle?) {}
             })
@@ -208,7 +205,7 @@ class CallActivity : Activity() {
         if (busy || isFinishing) return
         line("·", "didn't catch that (code $code)")
         if (talking && misses >= 1) { say("Okay, talk later. Bye.") { hangUp() }; return }
-        if (++misses > 2) { status.text = "TAP TALK OR USE THE BUTTONS"; return }
+        if (++misses > 2) { status.text = "Tap Talk, or use the buttons"; return }
         say(if (talking) "Anything else? Just say it, or say bye." else "Sorry, I didn't hear you.") { listen() }
     }
 
@@ -228,7 +225,7 @@ class CallActivity : Activity() {
         if (talking && Regex("\\b(bye|that's all|that is all|nothing|no thanks|i'm good|all good)\\b",RegexOption.IGNORE_CASE).containsMatchIn(text)) {
             say("Okay. Bye.") { hangUp() }; return
         }
-        status.text = "THINKING…"
+        status.text = "Thinking…"
         if (talking) say("One moment.")   // Max may take a while: the answer comes from main Max
         thread {
             val r = runCatching { JSONObject(Api.call(this, "POST", "/call/answer", JSONObject().put("id", id).put("text", text).toString(), 240_000)) }
@@ -247,7 +244,7 @@ class CallActivity : Activity() {
         recognizer?.cancel()
         dealRow.visibility = View.GONE
         say("On it, this takes a few seconds.")
-        status.text = "WORKING ON IT…"
+        status.text = "Working on it…"
         thread {
             val r = runCatching { JSONObject(Api.call(this, "POST", "/call/decide", JSONObject(d.toString()).put("id", id).toString(), 240_000)) }
             runOnUiThread {
@@ -274,20 +271,20 @@ class CallActivity : Activity() {
         val buttons = d.optJSONArray("buttons") ?: return
         for (i in 0 until buttons.length()) {
             val b = buttons.getJSONObject(i)
-            val (color, filled) = when (b.optString("style")) { "primary" -> cyan to true; "danger" -> red to false; else -> amber to false }
+            val (color, filled) = when (b.optString("style")) { "primary" -> rose to true; "danger" -> red to false; else -> blue to false }
             dealRow.addView(button(b.optString("label"), color, filled) { decide(b.getJSONObject("decision")) }, weight())
         }
     }
 
     private fun build() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(30), dp(22), dp(22)) }
-        col.addView(text((if (id.startsWith("me:")) "OUTGOING" else "INCOMING") + " · PRIVATE BUSINESS SYSTEM", 12f, muted, mono).apply { letterSpacing = 0.12f })
-        col.addView(text("MAX", 64f, cyan, condensed).apply { letterSpacing = 0.4f; setShadowLayer(18f, 0f, 0f, Color.argb(130, 56, 219, 230)) })
-        title = text(CallService.label(id).uppercase(Locale.US), 18f, ink, condensed)
+        col.addView(text(if (id.startsWith("me:")) "Outgoing call" else "Incoming call", 14f, muted, Typeface.DEFAULT))
+        col.addView(text("MAX", 56f, blue, condensed).apply { letterSpacing = 0.3f })
+        title = text(CallService.label(id), 20f, ink, condensed)
         col.addView(title)
-        prices = text("", 12f, amber, mono).apply { setPadding(0, dp(10), 0, dp(6)) }
+        prices = text("", 13f, blue, mono).apply { setPadding(0, dp(10), 0, dp(6)) }
         col.addView(prices)
-        status = text("CALLING YOU…", 14f, cyan, mono).apply { letterSpacing = 0.1f; setPadding(0, dp(10), 0, dp(10)) }
+        status = text("Calling you…", 15f, blue, Typeface.DEFAULT_BOLD).apply { setPadding(0, dp(12), 0, dp(10)) }
         col.addView(status)
         log = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll = ScrollView(this).apply { addView(log); isFillViewport = true }
@@ -296,14 +293,14 @@ class CallActivity : Activity() {
         dealRow = row().apply { visibility = View.GONE }
         col.addView(dealRow)
         callRow = row().apply { visibility = View.GONE }
-        speakerBtn = button("SPEAKER", cyan, false) { toggleSpeaker() }
+        speakerBtn = button("Speaker", blue, false) { toggleSpeaker() }
         callRow.addView(speakerBtn, weight())
-        callRow.addView(button("TALK", cyan, false) { misses = 0; if (!busy) { tts?.stop(); pending = null; listen() } }, weight())
-        callRow.addView(button("HANG UP", red, true) { hangUp() }, weight())
+        callRow.addView(button("Talk", blue, false) { misses = 0; if (!busy) { tts?.stop(); pending = null; listen() } }, weight())
+        callRow.addView(button("Hang up", red, true) { hangUp() }, weight())
         col.addView(callRow)
         ringRow = row()
-        ringRow.addView(button("DECLINE", red, true) { hangUp() }, weight())
-        ringRow.addView(button("ANSWER", cyan, true) { answer() }, weight())
+        ringRow.addView(button("Decline", red, true) { hangUp() }, weight())
+        ringRow.addView(button("Answer", rose, true) { answer() }, weight())
         col.addView(ringRow)
 
         col.setBackgroundColor(bg)
@@ -323,12 +320,12 @@ class CallActivity : Activity() {
     private fun toggleSpeaker() {
         speaker = !speaker
         audio.isSpeakerphoneOn = speaker
-        speakerBtn.text = if (speaker) "EARPIECE" else "SPEAKER"
+        speakerBtn.text = if (speaker) "Earpiece" else "Speaker"
     }
 
     private fun line(who: String, text: String) {
         if (text.isBlank()) return
-        log.addView(text("${who.uppercase(Locale.US)}  $text", 15f, if (who == "Max") ink else amber, Typeface.DEFAULT).apply {
+        log.addView(text("$who:  $text", 16f, if (who == "Max") ink else blue, Typeface.DEFAULT).apply {
             setPadding(0, dp(6), 0, dp(6))
         })
         scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
@@ -343,34 +340,22 @@ class CallActivity : Activity() {
     private fun button(label: String, color: Int, filled: Boolean, onClick: () -> Unit) = Button(this).apply {
         text = label
         typeface = condensed
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        isAllCaps = false
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
         setTextColor(if (filled) bg else color)
         stateListAnimator = null
-        background = Cut(color, filled, dp(10).toFloat())
+        background = StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), pill(color, true).apply { alpha = 140 })
+            addState(intArrayOf(), pill(color, filled))
+        }
         gravity = Gravity.CENTER
         setOnClickListener { onClick() }
     }
 
-    /** The HUD's chamfered shape: top-left and bottom-right corners cut. */
-    private class Cut(private val color: Int, private val filled: Boolean, private val cut: Float) : Drawable() {
-        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        override fun draw(c: Canvas) {
-            val b = bounds
-            val path = Path().apply {
-                moveTo(b.left + cut, b.top.toFloat()); lineTo(b.right.toFloat(), b.top.toFloat())
-                lineTo(b.right.toFloat(), b.bottom - cut); lineTo(b.right - cut, b.bottom.toFloat())
-                lineTo(b.left.toFloat(), b.bottom.toFloat()); lineTo(b.left.toFloat(), b.top + cut); close()
-            }
-            p.color = color
-            if (state.contains(android.R.attr.state_pressed)) { p.alpha = 120; p.style = Paint.Style.FILL; c.drawPath(path, p); return }
-            if (filled) { p.style = Paint.Style.FILL; c.drawPath(path, p) }
-            else { p.style = Paint.Style.FILL; p.alpha = 24; c.drawPath(path, p); p.alpha = 200; p.style = Paint.Style.STROKE; p.strokeWidth = 3f; c.drawPath(path, p) }
-        }
-        override fun isStateful() = true
-        override fun onStateChange(s: IntArray): Boolean { invalidateSelf(); return true }
-        override fun setAlpha(a: Int) {}
-        override fun setColorFilter(f: ColorFilter?) {}
-        @Deprecated("Drawable API") override fun getOpacity() = PixelFormat.TRANSLUCENT
+    private fun pill(color: Int, filled: Boolean) = GradientDrawable().apply {
+        cornerRadius = dp(16).toFloat()
+        if (filled) setColor(color)
+        else { setColor(Color.argb(30, Color.red(color), Color.green(color), Color.blue(color))); setStroke(dp(1), color) }
     }
 
     @Deprecated("Back hangs up only through the button")

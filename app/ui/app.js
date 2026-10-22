@@ -273,23 +273,6 @@ function leadsView() {
     </div>`;
 }
 
-/* ---------- Today ---------- */
-function todayView() {
-  const due = (data?.leads || []).filter(isDue);
-  return `
-    <h1>Today</h1>
-    <div class="sub">${esc(new Date(today() + 'T00:00').toLocaleDateString(data?.cfg?.locale || 'en-IN', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
-    <div class="actions"><button class="hud amber" data-chip="Brief me">Brief me now</button></div>
-    <div class="grid two gap-above">
-      <div class="panel"><h2>Todos</h2>
-        ${data?.todos?.length ? `<ul class="hudlist">${data.todos.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '<div class="empty">Nothing on your list.</div>'}
-      </div>
-      <div class="panel"><h2>Follow-ups due</h2>
-        ${due.length ? `<ul class="hudlist">${due.map((l) => `<li><b>${esc(l.contact)}</b> ${esc(l.need)}<span class="meta">${esc(l.business)}</span></li>`).join('')}</ul>` : '<div class="empty">No follow-ups due.</div>'}
-      </div>
-    </div>`;
-}
-
 /* ---------- Shield ----------
    What Max's guards caught: customers trying to steer the AI, lowballs it countered or turned down, drafts the
    safety check stopped, escalations handed to you, and risky commands it refused to run without you. */
@@ -370,8 +353,6 @@ function calBody() {
       <button class="hud amber" type="submit">Add</button>
     </form></details>`;
 }
-// The phone still has a Calendar tab: the same contents as a page.
-const calendarView = () => `<h1>Calendar</h1><div class="sub">Your schedule. Max adds to it when you mention a time.</div><div class="panel cal-page">${calBody()}</div>`;
 
 /* ---------- Businesses ----------
    Each business is three files on the server (profile.md, policy.tsv, never.md). The survey below adds one or edits
@@ -384,11 +365,11 @@ function businessView() {
   return `
     <div class="page-head"><div><h1>Businesses</h1>
       <div class="sub">Profiles and price limits Max works within.</div></div>
-      <button class="hud amber" data-biz-new>Add business</button></div>
+      ${window.max.biz ? '<button class="hud amber" data-biz-new>Add business</button>' : ''}</div>
     <div class="grid two">
       ${(data?.businesses || []).map((b) => `
         <div class="panel biz">
-          <div class="biz-head"><h3>${esc(bizName(b))}</h3><button class="hud mini" data-biz-edit="${esc(b.slug)}">Edit</button></div>
+          <div class="biz-head"><h3>${esc(bizName(b))}</h3>${window.max.biz ? `<button class="hud mini" data-biz-edit="${esc(b.slug)}">Edit</button>` : ''}</div>
           <div class="sells">${esc(keyLine(b.profile, 'Sells'))}</div>
           <div class="actions gap-below"><span class="tag">Negotiation: ${esc(keyLine(b.profile, 'Negotiation').split(/[.,]/)[0] || '-')}</span></div>
           ${b.policy.length ? `<h2>Price limits</h2><table>
@@ -530,7 +511,7 @@ async function saveSurvey(btn) {
 }
 
 /* ---------- Plumbing ---------- */
-const VIEWS = { inbox, chat: chatView, leads: leadsView, today: todayView, calendar: calendarView, shield: shieldView, business: businessView, survey: surveyView };
+const VIEWS = { inbox, chat: chatView, leads: leadsView, shield: shieldView, business: businessView, survey: surveyView };
 
 function render() {
   const main = $('#view');
@@ -577,7 +558,7 @@ document.addEventListener('click', async (e) => {
   if (!t) return;
   if (t.dataset.win) return window.max.win(t.dataset.win);
   if (t.id === 'pcPill') { const pc = await window.max.pc('toggle'); return toast(`Now controlling your ${pc}`); }
-  if (t.dataset.view) { if (t.closest('#setPop')) $('#setPop').hidePopover(); return go(t.dataset.view); }
+  if (t.dataset.view) { if (t.closest('#setPop')) $('#setPop').hidePopover?.(); return go(t.dataset.view); }
   if (t.dataset.bizNew !== undefined) return startSurvey(null);
   if (t.dataset.bizEdit) return startSurvey(t.dataset.bizEdit);
   if (t.dataset.surveyCancel !== undefined) { survey = null; return go('business'); }
@@ -669,10 +650,11 @@ document.addEventListener('keydown', (e) => {
 // Voice turns show up in the chat log too.
 window.max.onChatAppend((m) => { chat.push(m); saveChat(); if (view === 'chat') render(); });
 
-function tick() {
-  $('#clock').textContent = new Date().toLocaleTimeString(data?.cfg?.locale || undefined, { timeZone: data?.cfg?.tz || undefined, hour12: false });
+// The title-bar clock (desktop only: the phone shows its own).
+if ($('#clock')) {
+  const tick = () => { $('#clock').textContent = new Date().toLocaleTimeString(data?.cfg?.locale || undefined, { timeZone: data?.cfg?.tz || undefined, hour12: false }); };
+  setInterval(tick, 1000); tick();
 }
-setInterval(tick, 1000); tick();
 
 async function boot() {
   $('#view').innerHTML = `<div class="boot"><div>${orb('thinking')}<p>Waking Max up…</p></div></div>`;

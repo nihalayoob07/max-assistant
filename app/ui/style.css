@@ -289,7 +289,7 @@ ul.hudlist li .meta { margin-left: auto; font-size: 13px; color: var(--muted); }
 .menu svg { width: 20px; height: 20px; color: var(--blue-text); flex: none; }
 .menu small { display: block; font-size: 13px; font-weight: 500; color: var(--muted); }
 
-/* Calendar (in the bubble; the phone shows it as a page). Glass: the aurora shows through the bubble. */
+/* Calendar bubble. Glass: the aurora shows through it (the phone draws it solid). */
 #calPop {
   background: rgba(24, 25, 28, 0.58); border-color: rgba(255, 255, 255, 0.12); padding: 18px;
   backdrop-filter: blur(22px) saturate(150%); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -340,7 +340,6 @@ ul.evs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .add-ev { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; animation: view-in 0.3s var(--ease) both; }
 .add-ev .hud-input { width: 100%; min-width: 0; background: rgba(10, 10, 10, 0.6); }
 .add-ev .wide, .add-ev button, .add-ev [type="date"] { grid-column: 1 / -1; }
-.cal-page { max-width: 420px; }
 
 /* Inbox: the week ahead and todos */
 .core .brief { margin-top: 8px; }

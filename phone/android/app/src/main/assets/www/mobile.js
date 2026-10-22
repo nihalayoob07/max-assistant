@@ -29,7 +29,7 @@ function setupView() {
   return `
     <h1>Setup</h1>
     <div class="sub">${left ? `${left} step${left > 1 ? 's' : ''} left so Max can ring you` : 'All set: Max can ring you'}</div>
-    <div class="panel"><h2>So Max can call you</h2>
+    <section class="group"><h2>So Max can call you</h2>
       <div class="cards">${items.map(([k, name, how, ok, manual]) => `
         <div class="card ${ok ? 'new' : 'escalated'}">
           <div class="top"><span class="who">${esc(name)}</span><span class="tag ${ok ? 'green' : 'amber'}">${ok ? 'done' : 'to do'}</span></div>
@@ -39,7 +39,7 @@ function setupView() {
             ${manual ? `<button class="hud" data-setup-done="${k}">${ok ? 'Not done' : 'I did this'}</button>` : ''}
           </div>
         </div>`).join('')}</div>
-    </div>
+    </section>
     <div class="panel gap-above"><h2>Connection</h2>
       <ul class="hudlist">
         <li>Home server: <span class="tag ${serverOk ? 'green' : serverOk === false ? 'red' : 'dim'}">${serverOk ? 'reachable' : serverOk === false ? 'not reachable (Tailscale on?)' : 'checking…'}</span></li>
@@ -63,11 +63,21 @@ const callsBar = () => {
   return `<div class="panel callbar">
       <button class="hud amber" data-call-max>Call Max</button>
       <button class="switch ${on ? 'on' : ''}" data-calls role="switch" aria-checked="${on}">
-        <span class="knob"></span><span>Max's calls · ${on ? 'ON' : 'OFF (Telegram only)'}</span></button>
+        <span class="knob"></span><span>Max's calls ${on ? 'on' : 'off (Telegram only)'}</span></button>
     </div>`;
 };
 const inboxView = VIEWS.inbox;
 VIEWS.inbox = () => inboxView().replace('<div class="grid home">', callsBar() + '<div class="grid home">');
+
+// Old Android WebViews have no popovers: the top-bar buttons open the bubbles with a class instead.
+if (!HTMLElement.prototype.showPopover) {
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[popovertarget]'), inside = e.target.closest('.pop');
+    document.querySelectorAll('.pop.open').forEach((p) => { if (p !== inside && p.id !== btn?.getAttribute('popovertarget')) p.classList.remove('open'); });
+    if (btn) document.getElementById(btn.getAttribute('popovertarget')).classList.toggle('open');
+    if (e.target.closest('.pop [data-view]')) inside.classList.remove('open');
+  }, true);
+}
 
 const testLead = () => (data?.leads || []).find((l) => l.status === 'escalated')?.id || (data?.leads || []).slice(-1)[0]?.id || 'L0002';
 document.addEventListener('click', async (e) => {

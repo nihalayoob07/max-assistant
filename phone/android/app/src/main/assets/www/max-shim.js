@@ -35,10 +35,10 @@
   };
   // A still core: the desktop's spinning, blurred rings cost too much on a slow phone.
   window.orbSVG = (cls = '') => `<div class="orb lite ${cls}" role="button" aria-label="Chat with Max">
-    <svg viewBox="0 0 200 200" fill="none" stroke="#38dbe6">
+    <svg viewBox="0 0 200 200" fill="none" stroke="#2fa6d6">
       <circle cx="100" cy="100" r="84" stroke-width="2" stroke-dasharray="60 18 6 18" stroke-opacity=".75"/>
       <circle cx="100" cy="100" r="64" stroke-width="4" stroke-dasharray="2 9" stroke-opacity=".5"/>
       <circle cx="100" cy="100" r="46" stroke-width="1.5" stroke-dasharray="90 40" stroke-opacity=".9"/>
-      <circle cx="100" cy="100" r="24" fill="#38dbe6" fill-opacity=".55" stroke="none"/>
+      <circle cx="100" cy="100" r="24" fill="#4fb8e0" fill-opacity=".55" stroke="none"/>
     </svg></div>`;
 })();

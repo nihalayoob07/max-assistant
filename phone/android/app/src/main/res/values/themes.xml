@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#010507</color>
-    <color name="cyan">#38DBE6</color>
+    <color name="bg">#0A0A0A</color>
+    <color name="cyan">#4FB8E0</color>
     <style name="Theme.Max" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:colorBackground">@color/bg</item>

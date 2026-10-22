@@ -128,7 +128,7 @@ class CallService : Service() {
         val pi = { answer: Boolean, rc: Int -> PendingIntent.getActivity(this, rc, callIntent(answer), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
         val b = Notification.Builder(this, CH_CALL)
             .setSmallIcon(R.drawable.ic_stat)
-            .setColor(0xFF38DBE6.toInt())
+            .setColor(0xFF4FB8E0.toInt())
             .setContentTitle(title)
             .setContentText(text)
             .setCategory(Notification.CATEGORY_CALL)
@@ -152,7 +152,7 @@ class CallService : Service() {
         val open = PendingIntent.getActivity(this, 4, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_IMMUTABLE)
         getSystemService(NotificationManager::class.java).notify(ID_MISSED, Notification.Builder(this, CH_MISSED)
-            .setSmallIcon(R.drawable.ic_stat).setColor(0xFFFF8A1E.toInt())
+            .setSmallIcon(R.drawable.ic_stat).setColor(0xFFFF2D95.toInt())
             .setContentTitle("Missed call from Max").setContentText("$what (see the app or Telegram)")
             .setContentIntent(open).setAutoCancel(true).build())
         stop()

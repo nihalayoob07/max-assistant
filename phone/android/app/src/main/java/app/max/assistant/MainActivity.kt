@@ -30,7 +30,7 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val bg = Color.parseColor("#010507")
+        val bg = Color.parseColor("#0A0A0A")
         web = WebView(this).apply {
             setBackgroundColor(bg)
             overScrollMode = WebView.OVER_SCROLL_NEVER
