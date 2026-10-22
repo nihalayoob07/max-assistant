@@ -53,3 +53,7 @@ button.hud { padding: 11px 14px; font-size: 14px; }
 .compose textarea { font-size: 16px; min-height: 48px; }
 
 .toast { left: 14px; right: 14px; bottom: 72px; }
+
+/* Inbox: Call Max + the calls switch. */
+.callbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.callbar .switch { flex: 1; min-width: 0; }

@@ -56,6 +56,19 @@ function setupView() {
 }
 VIEWS.setup = setupView;
 
+// Inbox: call Max yourself, and switch Max's calls off (college, meetings). While off, deals and desk questions
+// wait and ring once calls are back on; Telegram still gets every alert.
+const callsBar = () => {
+  const on = data?.callsOn !== false;
+  return `<div class="panel callbar">
+      <button class="hud amber" data-call-max>Call Max</button>
+      <button class="switch ${on ? 'on' : ''}" data-calls role="switch" aria-checked="${on}">
+        <span class="knob"></span><span>Max's calls · ${on ? 'ON' : 'OFF (Telegram only)'}</span></button>
+    </div>`;
+};
+const inboxView = VIEWS.inbox;
+VIEWS.inbox = () => inboxView().replace('<div class="grid home">', callsBar() + '<div class="grid home">');
+
 const testLead = () => (data?.leads || []).find((l) => l.status === 'escalated')?.id || (data?.leads || []).slice(-1)[0]?.id || 'L0002';
 document.addEventListener('click', async (e) => {
   const t = e.target.closest('button');
@@ -67,6 +80,15 @@ document.addEventListener('click', async (e) => {
     return render();
   }
   if (t.dataset.register !== undefined) { Android.register(); return toast('Registering…'); }
+  if (t.dataset.callMax !== undefined) return Android.callMax();
+  if (t.dataset.calls !== undefined) {
+    try {
+      data.callsOn = await window.max.calls(data.callsOn === false);
+      toast(data.callsOn ? 'Calls ON: Max rings you again' : 'Calls OFF: Max only messages you on Telegram');
+      render();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
   if (t.dataset.testCall === 'local') { Android.testCall(testLead(), 8); return toast('Lock the screen now: Max rings in 8 seconds'); }
   if (t.dataset.testCall === 'brief') {
     try { await window.max.ring(`brief:${data?.today || new Date().toISOString().slice(0, 10)}`); toast('Max will call you with the brief…'); } catch (err) { toast(err.message, true); }

@@ -99,4 +99,8 @@ class Bridge(private val act: MainActivity) {
 
     @JavascriptInterface
     fun register() = Push.register(ctx)
+
+    /** The owner calls Max: no ringing, straight into a conversation with main Max. */
+    @JavascriptInterface
+    fun callMax() = CallService.dial(ctx)
 }

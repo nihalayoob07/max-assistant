@@ -10,6 +10,7 @@
 //   POST /call/answer {lead, text}    the owner's spoken answer -> a decision to confirm (nothing happens yet)
 //   POST /call/decide {lead, action, price, drop}   the confirmed decision: desk.py --owner, same as Telegram's buttons
 //   POST /ring {lead}           ring the phone now (testing)
+//   POST /calls {on}            switch Max's calls off (college, meetings) or back on; GET /data says which
 // Every request needs "Authorization: Bearer <key>" (~/.config/max-phone/key, made on first start).
 // Escalations ring the phone: every 20 s the leads file is read, and a lead that has just become "escalated"
 // gets an FCM data push carrying only its id. Telegram keeps getting its own alert, so it's the fallback.
@@ -307,8 +308,9 @@ async function ring(id) {
 
 /* ---------- The other calls: meetings and reminders, desk questions, the morning brief ---------- */
 // Call ids: L0002 (a deal) · E0003@2026-10-21 (a calendar event that day) · q:c<chat id> (a desk question) · brief:2026-10-21
+// me:<ms> is a call the owner started from the app.
 const kindOf = (id) => (/^L\d{4}$/.test(id) ? 'deal' : /^E\d{4}@\d{4}-\d{2}-\d{2}$/.test(id) ? 'event' : /^q:c\w{1,30}$/.test(id) ? 'question'
-  : /^brief:\d{4}-\d{2}-\d{2}$/.test(id) ? 'brief' : null);
+  : /^brief:\d{4}-\d{2}-\d{2}$/.test(id) ? 'brief' : /^me:\d{1,13}$/.test(id) ? 'owner' : null);
 const callId = (s) => { const id = String(s || ''); if (!kindOf(id)) throw new Error('bad call id'); return id; };
 
 // The front desk relay (desk/desk-relay.js) holds the WhatsApp questions that wait on the owner.
@@ -396,6 +398,7 @@ async function callInfo(id) {
       say: `${HI} ${person(q.chat)} on WhatsApp needs you: ${q.ask}. They said: ${q.them}. What should I tell them?`,
       buttons: [{ label: "I'LL REPLY MYSELF", style: 'action', decision: { action: 'skip' } }] };
   }
+  if (kind === 'owner') return { id, kind, title: 'YOU CALLED MAX', sub: '', info: '', say: `${HI} What can I do for you?`, buttons: [] };
   const [data, orders] = await Promise.all([load(), sh(ORDERS).then(parseOrders).catch(() => [])]);
   return { id, kind, title: 'MORNING BRIEF', sub: data.today, info: '', say: brief(data, orders), buttons: [] };
 }
@@ -457,6 +460,9 @@ async function decideCall(id, d) {
 // Events: 10 minutes before a timed calendar event; one titled "Reminder: ..." at its time. Questions: as soon as the desk
 // has one. Brief: once a day at ~/.config/max-phone/brief-time (default 07:30). Nothing rings in quiet hours
 // (~/.config/max-phone/quiet, default 23:00-07:00) except reminders the owner set themselves; the rest waits for the morning.
+// With calls switched off (~/.config/max-phone/calls = off) nothing rings, reminders included; deals and desk questions
+// ring once calls are back on, a brief only if it's still within its 3 hours.
+const callsOn = (set) => { if (set !== undefined) write('calls', set ? 'on' : 'off'); return read('calls') !== 'off'; };
 let rung = null, once = null;
 const mins = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 function quiet(now) {
@@ -473,7 +479,7 @@ async function watch() {
     try { rung = new Set(JSON.parse(read('rung.json') || 'null') ?? escalated); } catch { rung = new Set(escalated); }
     try { once = new Set(JSON.parse(read('once.json') || '[]')); } catch { once = new Set(); }
   }
-  const hush = quiet(now);
+  const off = !callsOn(), hush = off || quiet(now);
   const due = [];
   if (!hush) for (const id of escalated) if (!rung.has(id)) { rung.add(id); due.push(id); }
   rung = new Set([...rung].filter((id) => escalated.includes(id)));
@@ -483,7 +489,7 @@ async function watch() {
     const e = { title: title || '' }, left = mins(start) - now;
     const ringNow = isReminder(e) ? left <= 0 && left > -10 : left > 0 && left <= 10;
     const key = `${id}@${date}`;
-    if (ringNow && !once.has(key) && (!hush || isReminder(e))) { once.add(key); due.push(key); }
+    if (ringNow && !once.has(key) && (!hush || (isReminder(e) && !off))) { once.add(key); due.push(key); }
   }
   if (!hush) {
     for (const q of await questions().catch(() => [])) {
@@ -510,7 +516,8 @@ const authed = (req) => {
 };
 const ROUTES = {
   'GET /health': async () => ({ ok: true }),
-  'GET /data': async () => ({ ...(await load()), deskMode: deskMode() }),
+  'GET /data': async () => ({ ...(await load()), deskMode: deskMode(), callsOn: callsOn() }),
+  'POST /calls': async (j) => ({ on: callsOn(!!j.on) }),
   'POST /lead': (j) => leadAction(j),
   'POST /desk-mode': async (j) => ({ mode: deskMode(j.set) }),
   'POST /cal': async (j) => ({ out: await cal(j) }),

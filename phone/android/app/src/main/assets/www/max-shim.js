@@ -28,6 +28,7 @@
     deskMode: (set) => api('POST', '/desk-mode', { set }).then((r) => r.mode),
     cal: (a) => api('POST', '/cal', a),
     ring: (id) => api('POST', '/ring', { id }),   // phone only: the Setup screen's server tests
+    calls: (on) => api('POST', '/calls', { on }).then((r) => r.on),   // phone only: Max's calls on/off
     pc: async () => 'phone',
     voice: () => window.go?.('chat'),   // the core opens Chat (the voice conversation is the call screen)
     onStream: noop, cancelChat: noop, onChatAppend: noop, onPc: noop, win: noop,

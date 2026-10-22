@@ -64,7 +64,7 @@ class CallActivity : Activity() {
 
     private var id = ""
     private var deal: JSONObject? = null   // what this call is about (server: GET /call)
-    private val talking get() = id.startsWith("brief:") || id.startsWith("E")   // after Max speaks, a conversation with Max
+    private val talking get() = id.startsWith("brief:") || id.startsWith("E") || id.startsWith("me:")   // after Max speaks, a conversation with Max
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var ttsInit = false        // the engine answered (ready or not)
@@ -281,7 +281,7 @@ class CallActivity : Activity() {
 
     private fun build() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(30), dp(22), dp(22)) }
-        col.addView(text("INCOMING · PRIVATE BUSINESS SYSTEM", 12f, muted, mono).apply { letterSpacing = 0.12f })
+        col.addView(text((if (id.startsWith("me:")) "OUTGOING" else "INCOMING") + " · PRIVATE BUSINESS SYSTEM", 12f, muted, mono).apply { letterSpacing = 0.12f })
         col.addView(text("MAX", 64f, cyan, condensed).apply { letterSpacing = 0.4f; setShadowLayer(18f, 0f, 0f, Color.argb(130, 56, 219, 230)) })
         title = text(CallService.label(id).uppercase(Locale.US), 18f, ink, condensed)
         col.addView(title)

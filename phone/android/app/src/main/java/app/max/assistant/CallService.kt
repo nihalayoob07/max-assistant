@@ -43,7 +43,11 @@ class CallService : Service() {
             id.startsWith("brief:") -> "Your morning brief"
             id.startsWith("q:") -> "A customer needs you"
             id.startsWith("E") -> "Meeting or reminder"
+            id.startsWith("me:") -> "You called Max"
             else -> "$id needs your decision"
+        }
+        fun dial(ctx: Context) {
+            ctx.startForegroundService(Intent(ctx, CallService::class.java).setAction("dial").putExtra("id", "me:${System.currentTimeMillis()}"))
         }
         fun answer(ctx: Context) = ctx.startService(Intent(ctx, CallService::class.java).setAction("answer"))
         fun end(ctx: Context) = ctx.startService(Intent(ctx, CallService::class.java).setAction("end"))
@@ -70,6 +74,13 @@ class CallService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             "ring" -> start(intent.getStringExtra("id") ?: return START_NOT_STICKY)
+            "dial" -> {
+                channels(this)
+                if (id != null) { foreground("On a call with Max", label(id!!), false); runCatching { startActivity(callIntent(false)) }; return START_NOT_STICKY }
+                id = intent.getStringExtra("id")
+                foreground("On a call with Max", label(id!!), false)
+                startActivity(callIntent(true))
+            }
             "answer" -> { stopSound(); handler.removeCallbacks(missed); foreground("On a call with Max", "${id?.let { label(it) } ?: ""} · tap to return", false) }
             "end" -> stop()
             else -> if (!ringing && id == null) stopSelf()
