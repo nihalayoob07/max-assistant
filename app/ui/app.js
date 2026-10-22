@@ -535,7 +535,7 @@ function render() {
   if (view === 'chat') {
     const log = $('#log'); log.scrollTop = log.scrollHeight;
     if (keep && $('#input')) $('#input').value = keep;
-    $('#input')?.focus();
+    if (!matchMedia('(pointer: coarse)').matches) $('#input')?.focus();   // no keyboard popping up on a phone
   }
 }
 function go(v) { view = v; render(); }
