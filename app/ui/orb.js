@@ -3,17 +3,17 @@
 // page redrawing the whole glowing core every frame (that redraw is what made the rings stutter).
 'use strict';
 window.orbSVG = (cls = '') => {
-  const layer = (c, body) => `<svg class="${c}" viewBox="0 0 200 200"><g filter="url(#gl)" fill="none" stroke="#38dbe6">${body}</g></svg>`;
+  const layer = (c, body) => `<svg class="${c}" viewBox="0 0 200 200"><g filter="url(#gl)" fill="none" stroke="#2fa6d6">${body}</g></svg>`;
   return `<div class="orb ${cls}" role="button" tabindex="0" aria-label="Talk to Max">
   <svg class="base" viewBox="0 0 200 200">
     <defs>
       <radialGradient id="cg" cx="50%" cy="50%" r="50%">
-        <stop offset="0%" stop-color="#e6fdff"/><stop offset="35%" stop-color="#38dbe6"/>
-        <stop offset="100%" stop-color="#38dbe6" stop-opacity="0"/>
+        <stop offset="0%" stop-color="#e8f6fc"/><stop offset="35%" stop-color="#4fb8e0"/>
+        <stop offset="100%" stop-color="#007ba7" stop-opacity="0"/>
       </radialGradient>
       <filter id="gl"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
     </defs>
-    <g filter="url(#gl)" fill="none" stroke="#38dbe6">
+    <g filter="url(#gl)" fill="none" stroke="#2fa6d6">
       <circle cx="100" cy="100" r="92" stroke-opacity=".18"/>
       <circle cx="100" cy="100" r="36" stroke-opacity=".35"/>
     </g>

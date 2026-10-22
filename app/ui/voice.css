@@ -1,5 +1,5 @@
 /* Voice mode: a hologram floating over the dimmed desktop. The window itself is transparent. */
-:root { --cyan: #38dbe6; --cyan-2: #23a9b6; --glow: rgba(56, 219, 230, 0.55); --muted: #7fb3c0; }
+:root { --cyan: #4fb8e0; --cyan-2: #2fa6d6; --glow: rgba(0, 123, 167, 0.5); --muted: #8b9098; }   /* cerulean palette, same as style.css */
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; font-family: 'Rajdhani', sans-serif; }
 
@@ -21,9 +21,9 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 .holo { display: grid; justify-items: center; text-align: center; gap: 10px; }
 .label {
   font-weight: 700; font-size: 20px; letter-spacing: 0.9em; margin-right: -0.9em; color: var(--cyan);
-  text-shadow: 0 0 18px var(--glow);
+
 }
-.core { pointer-events: auto; cursor: pointer; filter: drop-shadow(0 0 30px rgba(77, 232, 255, 0.45)); animation: flicker 6s infinite; }
+.core { pointer-events: auto; cursor: pointer; filter: drop-shadow(0 0 30px rgba(0, 123, 167, 0.45)); animation: flicker 6s infinite; }
 @keyframes flicker { 0%, 100% { opacity: 1; } 47% { opacity: 1; } 48% { opacity: 0.82; } 49% { opacity: 1; } }
 .orb { width: min(44vh, 440px); height: min(44vh, 440px); display: block; }
 /* Ring rotation (slow drift, faster while thinking, eased between) is driven by orb.js. */
@@ -38,24 +38,24 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 @keyframes talk { 50% { transform: scale(1.18); } }
 
 .state { font: 13px 'JetBrains Mono', monospace; letter-spacing: 0.3em; text-transform: uppercase; color: var(--cyan-2); min-height: 18px; }
-.you { font: 600 20px 'Rajdhani'; color: rgba(214, 248, 255, 0.55); max-width: 640px; min-height: 26px; }
+.you { font: 600 20px 'Rajdhani'; color: rgba(237, 237, 238, 0.55); max-width: 640px; min-height: 26px; }
 .reply {
-  font: 600 24px/1.35 'Rajdhani'; color: #e6fdff; max-width: 680px; min-height: 32px; text-shadow: 0 0 14px rgba(77, 232, 255, 0.45);
+  font: 600 24px/1.35 'Rajdhani'; color: #ededee; max-width: 680px; min-height: 32px;
   max-height: 30vh; overflow: hidden;
 }
 
 /* Live work readouts: Max's real tool calls, either side of the core. */
-.readouts { display: flex; flex-direction: column; gap: 14px; padding: 0 48px; font: 16px 'JetBrains Mono', monospace; color: #a9dbe7; }
+.readouts { display: flex; flex-direction: column; gap: 14px; padding: 0 48px; font: 16px 'JetBrains Mono', monospace; color: #c4c8ce; }
 .readouts.left { align-items: flex-end; text-align: right; }
-.readouts .r { background: rgba(2, 10, 15, 0.78); padding: 3px 10px; opacity: 1; letter-spacing: 0.04em; max-width: 520px; text-shadow: 0 0 10px rgba(77, 232, 255, 0.35); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: type 0.4s steps(20) both; }
-.readouts .r b { color: var(--cyan); font-weight: 400; letter-spacing: 0.16em; font-size: 17px; text-shadow: 0 0 12px var(--glow); }
+.readouts .r { background: rgba(2, 10, 15, 0.78); padding: 3px 10px; opacity: 1; letter-spacing: 0.04em; max-width: 520px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: type 0.4s steps(20) both; }
+.readouts .r b { color: var(--cyan); font-weight: 400; letter-spacing: 0.16em; font-size: 17px; }
 .readouts .r.done { opacity: 0.6; }
-.readouts .r.done::after { content: '  ✓'; color: #ff8a1e; }
+.readouts .r.done::after { content: '  ✓'; color: #ff2d95; }
 @keyframes type { from { clip-path: inset(0 100% 0 0); } }
 
 .foot {
   position: fixed; bottom: 34px; left: 0; right: 0; text-align: center; pointer-events: none;
-  font: 11px 'JetBrains Mono', monospace; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(127, 179, 192, 0.6);
+  font: 11px 'JetBrains Mono', monospace; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(139, 144, 152, 0.6);
 }
 
 @media (prefers-reduced-motion: reduce) { .core, .stage, .dim, .readouts .r { animation: none; } }
@@ -63,7 +63,7 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 /* The core is clicked, not tabbed to, in voice mode: no focus box. */
 .orb:focus, .orb:focus-visible { outline: none; }
 .pc { font: 12px 'JetBrains Mono', monospace; letter-spacing: 0.24em; text-transform: uppercase; color: var(--cyan-2); margin-top: -4px; }
-body[data-pc="server"] .pc { color: #ff8a1e; }
+body[data-pc="server"] .pc { color: #ff2d95; }
 
 /* Tucked into the bottom-left corner. Same full-screen window (it lets clicks through), so going between
    full screen and the corner is an animation: the dim and readouts fade, the core flies (see morph() in
@@ -85,14 +85,14 @@ body.mini .orb { width: 150px; height: 150px; transition: width 0.45s cubic-bezi
 body.mini.tiny .orb { width: 64px; height: 64px; }
 body.mini.tiny .state { display: none; }
 body.snap .orb { transition: none !important; }   /* while morph() measures */
-body.mini .core { filter: drop-shadow(0 0 14px rgba(77, 232, 255, 0.45)); }
+body.mini .core { filter: drop-shadow(0 0 14px rgba(0, 123, 167, 0.45)); }
 body.mini .you, body.mini .reply {
   min-height: 0; max-width: none; padding: 8px 14px; background: rgba(3, 14, 20, 0.88);
-  border-left: 2px solid var(--cyan-2); clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  border-left: 2px solid var(--cyan-2);
   display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; animation: pop 0.3s cubic-bezier(.2, .8, .2, 1) both;
 }
-body.mini .you { grid-area: you; font: 600 15px/1.3 'Rajdhani'; color: rgba(214, 248, 255, 0.75); -webkit-line-clamp: 2; }
-body.mini .reply { grid-area: reply; font: 600 17px/1.3 'Rajdhani'; color: #e6fdff; text-shadow: none; border-left-color: var(--cyan); -webkit-line-clamp: 5; max-height: none; }
+body.mini .you { grid-area: you; font: 600 15px/1.3 'Rajdhani'; color: rgba(237, 237, 238, 0.75); -webkit-line-clamp: 2; }
+body.mini .reply { grid-area: reply; font: 600 17px/1.3 'Rajdhani'; color: #ededee; text-shadow: none; border-left-color: var(--cyan); -webkit-line-clamp: 5; max-height: none; }
 body.mini .you:empty, body.mini .reply:empty, body.mini:not(.grown) .you, body.mini:not(.grown) .reply { display: none; }   /* boxes only once the core has finished growing */
 @keyframes pop { from { opacity: 0; transform: translateX(-10px); } }
 
