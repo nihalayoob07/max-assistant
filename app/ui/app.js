@@ -174,7 +174,7 @@ function chatView() {
           ${['Brief me', "What's on my list?", "How's business this week?", 'Any follow-ups due?'].map((c) => `<button class="hud" data-chip="${esc(c)}">${esc(c)}</button>`).join('')}
         </div>
         <div class="compose">
-          <textarea id="input" aria-label="Message Max" placeholder="Message Max… (Shift+Enter for a new line)" ${thinking ? 'disabled' : ''}></textarea>
+          <textarea id="input" aria-label="Message Max" placeholder="Message Max…" title="Enter sends, Shift+Enter for a new line" ${thinking ? 'disabled' : ''}></textarea>
           <button class="hud amber" id="send" ${thinking ? 'disabled' : ''}>Send</button>
         </div>
       </div>
@@ -249,7 +249,7 @@ function askAbout(id, prompt) {
 /* ---------- Leads ---------- */
 function leadsView() {
   const leads = data?.leads || [];
-  const businesses = [...new Set(leads.map((l) => l.business))];
+  const businesses = [...new Set([...(data?.businesses || []).map((b) => b.slug), ...leads.map((l) => l.business)])];
   const statuses = ['new', 'talking', 'escalated', 'agreed', 'paid', 'lost', 'junk'];
   const shown = leads.filter((l) => (leadFilter.business === 'all' || l.business === leadFilter.business) &&
     (leadFilter.status === 'all' || l.status === leadFilter.status)).slice().reverse();

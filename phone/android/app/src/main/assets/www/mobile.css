@@ -49,6 +49,7 @@ button.hud.mini { padding: 6px 12px; }
 .decision .prices { gap: 18px; }
 
 /* Leads: the wide table scrolls sideways instead of squashing. */
+.filters select.hud-input { flex: 1 1 0; min-width: 0; }
 .filters .totals { margin-left: 0; width: 100%; gap: 18px; }
 .panel table { display: block; overflow-x: auto; white-space: nowrap; }
 .panel td:last-child { white-space: normal; min-width: 220px; }

@@ -38,11 +38,12 @@ import kotlin.concurrent.thread
  *  understood, and only acts on a "yes". The buttons do the same without talking. */
 class CallActivity : Activity() {
 
-    // The dashboard's palette: jet black, cerulean for structure, rose for the action, red for danger.
+    // The dashboard's palette: jet black, cerulean for structure, rose for the action. Ending or declining is a calm
+    // grey button, so the screen never shows two hot colours side by side.
     private val bg = Color.parseColor("#0A0A0A")
     private val blue = Color.parseColor("#4FB8E0")
     private val rose = Color.parseColor("#FF2D95")
-    private val red = Color.parseColor("#FF5A5A")
+    private val grey = Color.parseColor("#2A2C30")
     private val ink = Color.parseColor("#EDEDEE")
     private val muted = Color.parseColor("#8B9098")
     private val condensed = Typeface.create("sans-serif-condensed", Typeface.BOLD)
@@ -271,7 +272,7 @@ class CallActivity : Activity() {
         val buttons = d.optJSONArray("buttons") ?: return
         for (i in 0 until buttons.length()) {
             val b = buttons.getJSONObject(i)
-            val (color, filled) = when (b.optString("style")) { "primary" -> rose to true; "danger" -> red to false; else -> blue to false }
+            val (color, filled) = when (b.optString("style")) { "primary" -> rose to true; "danger" -> muted to false; else -> blue to false }
             dealRow.addView(button(b.optString("label"), color, filled) { decide(b.getJSONObject("decision")) }, weight())
         }
     }
@@ -296,10 +297,10 @@ class CallActivity : Activity() {
         speakerBtn = button("Speaker", blue, false) { toggleSpeaker() }
         callRow.addView(speakerBtn, weight())
         callRow.addView(button("Talk", blue, false) { misses = 0; if (!busy) { tts?.stop(); pending = null; listen() } }, weight())
-        callRow.addView(button("Hang up", red, true) { hangUp() }, weight())
+        callRow.addView(button("Hang up", grey, true) { hangUp() }, weight())
         col.addView(callRow)
         ringRow = row()
-        ringRow.addView(button("Decline", red, true) { hangUp() }, weight())
+        ringRow.addView(button("Decline", grey, true) { hangUp() }, weight())
         ringRow.addView(button("Answer", rose, true) { answer() }, weight())
         col.addView(ringRow)
 
@@ -342,7 +343,7 @@ class CallActivity : Activity() {
         typeface = condensed
         isAllCaps = false
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
-        setTextColor(if (filled) bg else color)
+        setTextColor(if (!filled) color else if (color == grey) ink else bg)
         stateListAnimator = null
         background = StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_pressed), pill(color, true).apply { alpha = 140 })

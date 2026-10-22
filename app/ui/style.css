@@ -12,7 +12,7 @@
   --blue: #007ba7;           /* cerulean: fills and lines (too dark for small text on black) */
   --blue-text: #4fb8e0;      /* cerulean tint for text and icons */
   --rose: #ff2d95;           /* the action */
-  --red: #ff5a5a;            /* danger, shown on hover and in errors */
+  --red: #ff4d6a;            /* danger, shown on hover and in errors */
   --radius: 12px;
   --radius-sm: 8px;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);   /* fast out, soft landing */
@@ -164,7 +164,7 @@ h1, h2, h3 { text-wrap: balance; }
 .tag { font-size: 13px; font-weight: 600; padding: 1px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: #c4c8ce; white-space: nowrap; }
 .tag.amber { color: var(--rose); background: rgba(255, 45, 149, 0.12); }
 .tag.green { color: var(--blue-text); background: rgba(0, 123, 167, 0.18); }
-.tag.red { color: var(--red); background: rgba(255, 90, 90, 0.1); }
+.tag.red { color: var(--red); background: rgba(255, 77, 106, 0.12); }
 .tag.dim { color: var(--muted); }
 
 /* Buttons. Default: quiet outline. .amber: the action (rose). .green: confirm (cerulean). .red: danger, grey until hovered. */
@@ -182,7 +182,7 @@ button.hud.amber:hover { background: #ff57aa; }
 button.hud.green { color: var(--blue-text); border-color: rgba(79, 184, 224, 0.5); }
 button.hud.green:hover { background: rgba(0, 123, 167, 0.18); }
 button.hud.red { color: var(--muted); border-color: transparent; }
-button.hud.red:hover { color: var(--red); background: rgba(255, 90, 90, 0.08); }
+button.hud.red:hover { color: var(--red); background: rgba(255, 77, 106, 0.1); }
 button.hud.mini { padding: 2px 10px; font-size: 14px; }
 .hud-input, select.hud-input {
   font: 15px var(--mono); color: var(--text); background: var(--bg); border: 1px solid var(--line-strong);
@@ -190,7 +190,11 @@ button.hud.mini { padding: 2px 10px; font-size: 14px; }
 }
 .hud-input:focus { border-color: var(--blue-text); }
 .hud-input::placeholder { color: #6b7078; }
-select.hud-input { font-family: var(--display); font-weight: 600; width: auto; cursor: pointer; }
+select.hud-input {
+  font-family: var(--display); font-weight: 600; width: auto; max-width: 100%; cursor: pointer; appearance: none;
+  padding-right: 34px; text-overflow: ellipsis;
+  background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b9098' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center / 16px;
+}
 
 /* Decisions */
 .decision .prices { display: flex; gap: 28px; flex-wrap: wrap; align-items: end; margin: 14px 0; }
@@ -226,7 +230,7 @@ select.hud-input { font-family: var(--display); font-weight: 600; width: auto; c
 .msg:last-child { animation: rise 0.35s var(--ease) both; }
 .msg.user { align-self: flex-end; background: var(--surface-2); padding: 10px 14px; border-radius: var(--radius) var(--radius) 4px var(--radius); }
 .msg.max { align-self: flex-start; padding-left: 14px; border-left: 2px solid var(--blue); }
-.msg.err { border-left-color: var(--red); color: #ffb3b3; }
+.msg.err { border-left-color: var(--red); color: #ffb8c6; }
 .compose button.hud { border-radius: var(--radius); }
 .compose { display: flex; gap: 10px; align-items: stretch; }
 .compose textarea {
@@ -325,7 +329,7 @@ ul.evs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .ev.is-due .ev-time { color: var(--rose); }
 .ev-title { flex: 1; min-width: 0; user-select: text; overflow-wrap: anywhere; }
 .ev-rm { border: 0; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; border-radius: 6px; padding: 0 6px; }
-.ev-rm:hover { color: var(--red); background: rgba(255, 90, 90, 0.1); }
+.ev-rm:hover { color: var(--red); background: rgba(255, 77, 106, 0.1); }
 #calPop .empty { padding: 4px 0; }
 .add-wrap { margin-top: 12px; }
 .add-wrap summary {
