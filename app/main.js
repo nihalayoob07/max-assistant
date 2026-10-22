@@ -28,7 +28,6 @@ function serverConfig() {
   return cfgReady;
 }
 const owner = () => (CFG.OWNER_NAME || '').split(' ')[0];
-const withName = (s) => (owner() ? s.replace('{name}', owner()) : s.replace(/,? ?\{name\}/, ''));
 // Speech models get a share of the CPU sized to this machine, so a 4-core laptop isn't swamped and a
 // 16-core one isn't wasted: Whisper 2-4 threads, the voice 2-8.
 const CORES = require('os').availableParallelism?.() || require('os').cpus().length;
@@ -194,34 +193,15 @@ awk -F'\\t' -v OFS='\\t' -v id=${shq(id)} -v st=${shq(set[0])} -v val=${shq(set[
 echo ok`);
 }
 
-// Greetings and small talk get an instant answer from the app instead of a round trip to Max. Only exact
-// short phrases match ("hi", "thanks max"), so anything with a real request in it still goes to Max.
-const pick = (a) => a[Math.floor(Math.random() * a.length)];
-const SMALL_TALK = [
-  [/^(hi|hello|hey|hiya|yo|sup|hey there|hello there|wassup|whats up|what's up)$/, () => {
-    const h = new Date().getHours();
-    return withName(pick([`${h < 12 ? 'Morning' : h < 17 ? 'Hey' : 'Evening'}, {name}. What do you need?`, 'Hey {name}. What can I do for you?', "Hey. I'm here, what's up?"]));
-  }],
-  [/^good (morning|afternoon|evening)$/, (m) => withName(`Good ${m[1]}, {name}. What's first?`)],
-  [/^(how are you|how are you doing|hows it going|how's it going|you good|how r u)$/, () => pick(['All good and ready to go. What do you need?', "Running smooth. What's up?"])],
-  [/^(thanks|thank you|thx|ty|cheers|thanks a lot|thank you so much|nice one)$/, () => pick(['Anytime.', 'Happy to help.', 'No problem.'])],
-  [/^(ok|okay|cool|nice|great|got it|alright|perfect|awesome|sounds good)$/, () => pick(['Sure.', 'Cool.', 'Got it.'])],
-  [/^(bye|goodbye|see you|see ya|later|cya)$/, () => withName(pick(['Later, {name}.', 'See you.']))],
-  [/^(good night|gn|night)$/, () => withName('Good night, {name}.')],
-  [/^(who are you|what are you)$/, () => "I'm Max, your assistant. I run your businesses' inboxes and leads, keep your calendar, and control your laptop and server."],
-  [/^(what can you do|help)$/, () => 'I can reply to clients, track leads, manage your calendar, research things, and control your laptop and server. Just ask.'],
-];
+// Greetings and small talk ("hi", "thanks max") get an instant answer; see quick.js.
 function quickReply(messages) {
-  const last = messages.filter((m) => m.role === 'user').pop();
-  const t = String(last?.content || '').toLowerCase().replace(/^🎙\s*/, '').replace(/[^\w\s']/g, ' ')
-    .replace(/\s+/g, ' ').trim().replace(/^(hey |ok |okay )?max\b ?/, '').replace(/ max$/, '').trim() || 'hi';
-  for (const [re, say] of SMALL_TALK) { const m = re.exec(t); if (m) return say(m); }
-  return null;
+  return instant.smallTalk(messages.filter((x) => x.role === 'user').pop()?.content, owner());
 }
 
 // YouTube commands ("pause", "next video", "search mr beast", "play the third video") run straight on the
 // laptop through its helper (see youtube.js), no round trip to Max.
 const youtube = require('./youtube');
+const instant = require('./quick');   // small talk, list, calendar, follow-ups, leads and "brief me" straight from the data (shared with the phone)
 const pcCommands = require('./pc');   // time, battery, volume, apps, windows... answered without Max
 async function laptopHands(p, body) {
   const r = await fetch('http://127.0.0.1:18700' + p, { method: 'POST', body: JSON.stringify(body),
@@ -233,6 +213,13 @@ async function quickAction(messages) {
   const quick = quickReply(messages);
   if (quick) return quick;
   const last = messages.filter((m) => m.role === 'user').pop();
+  const want = instant.intent(last?.content);
+  if (want) {
+    const [data, orders] = await Promise.all([sandbox(READ).then(parse),
+      want.kind === 'brief' ? sandbox(instant.ORDERS).then(instant.parseOrders).catch(() => []) : []]);
+    const said = instant.answer(want, data, { owner: owner(), orders });
+    if (said) return said;
+  }
   // A misheard name at the start ("Matt, open Zen") is still Max: drop it so the commands match.
   const said = String(last?.content || '').replace(/^🎙\s*/, '').replace(new RegExp(`^\\W*((hey|hi|ok|okay|yo)\\W+)?${NAME}\\b\\W*`, 'i'), '');
   const pcCmd = pcCommands.parse(said);

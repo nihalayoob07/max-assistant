@@ -311,7 +311,7 @@ function voiceView() {
   }
   return `
     <h1>Voice</h1>
-    <div class="sub">How fast Max talks, on this PC and on calls.</div>
+    <div class="sub">How fast Max talks, on your PC and on calls.</div>
     <div class="panel voice-set">
       <div class="speed-row"><label for="speed">Speaking speed</label><output id="speedOut">${speedLabel(speed)}</output></div>
       <input type="range" id="speed" min="0.7" max="1.2" step="0.05" value="${speed}" aria-describedby="speedOut">

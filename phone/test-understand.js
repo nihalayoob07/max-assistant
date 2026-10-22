@@ -32,6 +32,6 @@ const orders = parseOrders('shop\tref\tplaced\tstatus\tcustomer\n' +
 const b = brief({ today: '2026-10-21', events: [{ id: 'E1', date: '2026-10-21', start: '10:30', title: 'Call with the bakery' }],
   todos: ['pay the electricity bill (due 2026-10-20, added 2026-10-15)', 'buy filament (added 2026-10-18)'],
   leads: [{ id: 'L1', status: 'escalated' }, { id: 'L2', contact: 'Jordan', status: 'talking', next: '2026-10-21' }] }, orders);
-for (const want of ['Test Shop: 1 order to make. Phone Stand x2, Keychain for Sam, from 20 Oct', '1 order waiting for payment', 'Call with the bakery at 10:30 a m',
+for (const want of ['Test Shop: 1 order to make. Phone Stand x2, Keychain for Sam, from 20 Oct', '1 order waiting for payment', 'Call with the bakery at 10:30 am',
   'pay the electricity bill, which is overdue', '1 other thing on your list', '1 deal waiting', 'Follow-ups due with Jordan']) assert(b.includes(want), `${want}\n${b}`);
 console.log('brief ok');

@@ -21,6 +21,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+// Instant answers, the morning brief and its helpers, shared with the desktop app.
+const { smallTalk, intent, answer: quickAnswer, brief, ORDERS, parseOrders, hm12, person } = require(path.join(__dirname, '..', 'app', 'quick.js'));
 
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const [HOST, PORT] = arg('listen', '0.0.0.0:18660').split(':');
@@ -156,6 +158,15 @@ function deskMode(set) {
 /* ---------- Chat with main Max (its API on the host, port 8642) ---------- */
 let maxToken = '';
 async function chat(messages) {
+  const last = messages.filter((m) => m.role === 'user').pop()?.content;
+  const hello = smallTalk(last, OWNER);
+  if (hello) return hello;
+  const want = intent(last);
+  if (want) {
+    const [data, orders] = await Promise.all([load(), want.kind === 'brief' ? sh(ORDERS).then(parseOrders).catch(() => []) : []]);
+    const quick = quickAnswer(want, data, { owner: OWNER, orders });
+    if (quick) return quick;
+  }
   if (!maxToken) {
     maxToken = await new Promise((resolve) => execFile('/bin/sh', ['-c', 'export PATH=$HOME/.local/bin:$PATH; nemohermes max gateway-token --quiet 2>/dev/null | tail -1'],
       { timeout: 30000 }, (_e, out) => resolve(String(out || '').trim())));
@@ -324,47 +335,7 @@ async function relay(method, p, body) {
 }
 const questions = async () => (await relay('GET', '/questions')).items || [];
 
-const hm12 = (t) => { const [h, m] = t.split(':').map(Number); return `${h % 12 || 12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${h < 12 ? 'a m' : 'p m'}`; };
 const isReminder = (e) => /^remind(er)?\b/i.test(e.title);
-const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-const list = (a) => (a.length <= 2 ? a.join(' and ') : `${a.slice(0, -1).join(', ')} and ${a.at(-1)}`);
-const person = (c) => (/^\+?\d[\d\s-]{6,}$/.test(String(c || '')) ? 'a client' : c);
-
-// The morning brief, from the dashboard data and any shop's orders table (skills/shop-orders). Pure, so it's testable.
-function brief(data, orders) {
-  const today = data.today;
-  const s = [`Good morning${OWNER ? ` ${OWNER}` : ''}, it's Max. Here's your day.`];
-  const shops = [...new Set(orders.map((o) => o.shop))], shop = shops.length === 1 && shops[0] ? `${shops[0]}: ` : '';
-  const toPrint = orders.filter((o) => o.status === 'paid'), printing = orders.filter((o) => o.status === 'printing');
-  const unpaid = orders.filter((o) => o.status === 'pending');
-  if (toPrint.length) s.push(`${shop}${plural(toPrint.length, 'order')} to make. ${toPrint.slice(0, 3).map((o) => `${o.items} for ${o.customer.split(' ')[0]}, from ${o.placed.split(/ \d{4}/)[0]}`).join('. ')}${toPrint.length > 3 ? ', and more' : ''}.`);
-  if (printing.length) s.push(`${plural(printing.length, 'order')} still printing.`);
-  if (unpaid.length) s.push(`${plural(unpaid.length, 'order')} waiting for payment.`);
-  if (orders.length && !toPrint.length && !printing.length) s.push(`No orders waiting${shop ? ` at ${shops[0]}` : ''}.`);
-  const evs = data.events.filter((e) => e.date === today).sort((a, b) => a.start.localeCompare(b.start));
-  if (evs.length) s.push(`On your calendar: ${list(evs.map((e) => (e.start === 'allday' ? e.title : `${e.title} at ${hm12(e.start)}`)))}.`);
-  else s.push('Your calendar is clear today.');
-  const due = data.todos.map((t) => [t, (/\(due (\d{4}-\d{2}-\d{2})/.exec(t) || [])[1]]).filter(([, d]) => d && d <= today);
-  const clean = (t) => t.replace(/\s*\((due|added)[^)]*\)/g, '').trim();
-  if (due.length) s.push(`Due today: ${list(due.slice(0, 3).map(([t, d]) => clean(t) + (d < today ? ', which is overdue' : '')))}.`);
-  if (data.todos.length > due.length) s.push(`${plural(data.todos.length - due.length, 'other thing')} on your list.`);
-  const leads = data.leads;
-  const waiting = leads.filter((l) => l.status === 'escalated');
-  if (waiting.length) s.push(`${plural(waiting.length, 'deal')} waiting for your decision.`);
-  const follow = leads.filter((l) => ['new', 'talking'].includes(l.status) && l.next && l.next <= today);
-  if (follow.length) s.push(`Follow-ups due with ${list(follow.slice(0, 3).map((l) => person(l.contact)))}.`);
-  const pay = leads.filter((l) => l.status === 'agreed' && l.next && l.next <= today);
-  if (pay.length) s.push(`Payment due from ${list(pay.slice(0, 3).map((l) => person(l.contact)))}.`);
-  s.push('Anything you want me to do?');
-  return s.join(' ');
-}
-// Each business's orders, with the shop's name (its profile's first line) in front.
-const ORDERS = `echo shop; for f in ~/.hermes/workspace/business/*/orders.tsv; do [ -f "$f" ] || continue
-  n=$(head -1 "\${f%/orders.tsv}/profile.md" 2>/dev/null | sed 's/^# *//'); awk -v n="$n" -F'\\t' 'FNR > 1 { print n "\\t" $0 }' "$f"; done`;
-const parseOrders = (out) => out.split('\n').slice(1).filter((l) => l.trim()).map((l) => {
-  const [shop, ref, placed, status, customer, , , items, total] = l.split('\t');
-  return { shop, ref, placed, status, customer: customer || 'a customer', items: (items || '').replace(/ x1\b/g, '').replace(/;/g, ','), total };
-});
 
 // What Max says when the call is answered, and the buttons that answer it without talking.
 async function callInfo(id) {
@@ -400,7 +371,7 @@ async function callInfo(id) {
   }
   if (kind === 'owner') return { id, kind, title: 'You called Max', sub: '', info: '', say: `${HI} What can I do for you?`, buttons: [] };
   const [data, orders] = await Promise.all([load(), sh(ORDERS).then(parseOrders).catch(() => [])]);
-  return { id, kind, title: 'Your morning brief', sub: data.today, info: '', say: brief(data, orders), buttons: [] };
+  return { id, kind, title: 'Your morning brief', sub: data.today, info: '', say: brief(data, orders, OWNER), buttons: [] };
 }
 
 // After a brief or a reminder the call is a conversation with main Max (each call keeps its own short history).
