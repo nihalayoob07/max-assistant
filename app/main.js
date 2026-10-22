@@ -123,7 +123,7 @@ echo "@@TODAY"; date +%F
 echo "@@CAL"; cat ~/.hermes/workspace/calendar.tsv 2>/dev/null
 echo "@@SHIELD"; tail -n 60 ~/.hermes/workspace/shield.tsv 2>/dev/null
 echo "@@DESK"; cat $B/desk_state.json 2>/dev/null; echo
-for d in $B/*/; do s=$(basename "$d"); [ "$s" = clients ] && continue
+for d in $B/*/; do s=$(basename "$d"); case $s in clients|docs) continue;; esac   # quote PDFs live in docs/
   echo "@@BIZ $s"; cat "$d/profile.md" 2>/dev/null
   echo "@@POLICY"; cat "$d/policy.tsv" 2>/dev/null
   echo "@@NEVER"; cat "$d/never.md" 2>/dev/null
@@ -137,7 +137,7 @@ function parse(out) {
     const m = /^@@(\w+)\s*(.*)$/.exec(line);
     if (m) {
       section = m[1];
-      if (section === 'BIZ') { biz = { slug: m[2].trim(), profile: '', policy: [], never: '' }; data.businesses.push(biz); section = 'PROFILE'; }
+      if (section === 'BIZ') { biz = { slug: m[2].trim(), profile: '', policy: [], policyNotes: [], never: '' }; data.businesses.push(biz); section = 'PROFILE'; }
       continue;
     }
     if (section === 'LEADS' && line.trim() && !line.startsWith('id\t')) {
@@ -155,7 +155,8 @@ function parse(out) {
     }
     else if (section === 'DESK' && line.trim().startsWith('{')) { try { data.desk = JSON.parse(line); } catch {} }
     else if (section === 'PROFILE' && biz) biz.profile += line + '\n';
-    else if (section === 'POLICY' && biz && line.trim() && !line.startsWith('#')) {
+    else if (section === 'POLICY' && biz && line.startsWith('#')) biz.policyNotes.push(line);   // kept when the survey rewrites the file
+    else if (section === 'POLICY' && biz && line.trim()) {
       const [product, unit, list, floor, minQty, lead, target] = line.split('\t');
       biz.policy.push({ product, unit, list: Number(list), floor: Number(floor), minQty, lead, target: target ? Number(target) : null });
     } else if (section === 'NEVER' && biz) biz.never += line + '\n';
@@ -744,6 +745,17 @@ ipcMain.handle('cal', async (_e, a) => {
   if (!/exit=0\s*$/.test(out)) throw new Error(out.replace(/exit=\d+\s*$/, '').trim() || 'calendar update failed');
   return out.replace(/exit=\d+\s*$/, '').trim();
 });
+// Add or edit a business from the dashboard's survey. The three files go to private/business/<slug>/ on the server
+// (what max-fixup syncs from) and straight into the sandbox, so Max uses them at once without a fixup.
+// ponytail: files ride in the ssh command line, fine for profiles up to ~15 KB; pipe them over stdin if one grows past that.
+ipcMain.handle('biz', async (_e, b) => {
+  if (!/^[a-z0-9-]{1,40}$/.test(b?.slug || '')) throw new Error('Business id: use lowercase letters, digits and dashes');
+  const put = (dir) => ['profile.md', 'policy.tsv', 'never.md']
+    .map((f) => `printf %s ${Buffer.from(String(b.files?.[f] ?? '')).toString('base64')} | base64 -d > ${dir}/${f}`).join(' && ');
+  await run(['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', HOST, `d=~/max-assistant/private/business/${b.slug}; mkdir -p $d && ${put('$d')}`], 20000);
+  const out = await sandbox(`d=~/.hermes/workspace/business/${b.slug}; mkdir -p $d && ${put('$d')} && echo saved`);
+  if (!/saved/.test(out)) throw new Error('Saved on the server, but Max has not picked it up yet: run max-fixup');
+});
 ipcMain.on('win', (_e, what) => {
   if (!win) return;
   if (what === 'min') win.minimize();
@@ -858,7 +870,7 @@ else app.whenReady().then(async () => {
       }
       const open = (id) => `go('inbox'); document.getElementById('${id}').showPopover()`;   // the top-bar bubbles
       const shots = { inbox: "go('inbox')", chat: "go('chat')", leads: "go('leads')", shield: "go('shield')", business: "go('business')",
-        calendar: open('calPop'), settings: open('setPop') };
+        calendar: open('calPop'), settings: open('setPop'), survey: "startSurvey(data.businesses[0]?.slug)" };
       for (const [v, js] of Object.entries(shots)) {
         await win.webContents.executeJavaScript(`document.querySelectorAll(':popover-open').forEach((p) => p.hidePopover()); ${js}`);
         await wait(1500);

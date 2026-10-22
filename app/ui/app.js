@@ -366,42 +366,184 @@ function calBody() {
 // The phone still has a Calendar tab: the same contents as a page.
 const calendarView = () => `<h1>Calendar</h1><div class="sub">Your schedule. Max adds to it when you mention a time.</div><div class="panel cal-page">${calBody()}</div>`;
 
-/* ---------- Businesses ---------- */
+/* ---------- Businesses ----------
+   Each business is three files on the server (profile.md, policy.tsv, never.md). The survey below adds one or edits
+   one a question at a time; profile lines it doesn't know about ride along in "Anything else", so nothing is lost. */
+const BIZ_KEYS = [['sells', 'Sells'], ['website', 'Website'], ['channels', 'Channels'], ['negotiation', 'Negotiation'], ['payment', 'Payment terms'], ['tone', 'Tone']];
+const keyLine = (profile, key) => (new RegExp(`^${key}:\\s*(.*)$`, 'mi').exec(profile) || [])[1] || '';
+const bizName = (b) => (/^# (.*)$/m.exec(b.profile) || [])[1] || b.slug;
+
 function businessView() {
-  const line = (profile, key) => (new RegExp(`^${key}:\\s*(.*)$`, 'mi').exec(profile) || [])[1] || '';
   return `
-    <h1>Businesses</h1>
-    <div class="sub">Profiles and price limits Max works within. Edit them in private/business, then run fixup.</div>
+    <div class="page-head"><div><h1>Businesses</h1>
+      <div class="sub">Profiles and price limits Max works within.</div></div>
+      <button class="hud amber" data-biz-new>Add business</button></div>
     <div class="grid two">
       ${(data?.businesses || []).map((b) => `
         <div class="panel biz">
-          <h3>${esc(b.slug)}</h3>
-          <div class="sells">${esc(line(b.profile, 'Sells'))}</div>
-          <div class="actions gap-below"><span class="tag">Negotiation: ${esc(line(b.profile, 'Negotiation').split(/[.,]/)[0] || '-')}</span></div>
+          <div class="biz-head"><h3>${esc(bizName(b))}</h3><button class="hud mini" data-biz-edit="${esc(b.slug)}">Edit</button></div>
+          <div class="sells">${esc(keyLine(b.profile, 'Sells'))}</div>
+          <div class="actions gap-below"><span class="tag">Negotiation: ${esc(keyLine(b.profile, 'Negotiation').split(/[.,]/)[0] || '-')}</span></div>
           ${b.policy.length ? `<h2>Price limits</h2><table>
             <tr><th>Product</th><th class="num">List</th><th class="num">Target</th><th class="num">Floor</th><th>Min days</th></tr>
-            ${b.policy.map((p) => `<tr><td>${esc(p.product)}</td><td class="num">${money(p.list)}</td><td class="num">${p.target ? money(p.target) : '·'}</td><td class="num">${money(p.floor)}</td><td>${esc(p.lead)}</td></tr>`).join('')}
-          </table>` : '<div class="empty">No negotiation: every order goes through the website.</div>'}
+            ${b.policy.map((p) => `<tr><td>${esc(p.product)}</td><td class="num">${money(p.list)}</td><td class="num">${p.target ? money(p.target) : '-'}</td><td class="num">${money(p.floor)}</td><td>${esc(p.lead)}</td></tr>`).join('')}
+          </table>` : '<div class="empty">No price list: Max sends price questions to you.</div>'}
           ${((nv) => nv.length ? `<h2>Never agree to</h2><ul class="hudlist">${nv.map((l) => `<li>${esc(l.slice(2))}</li>`).join('')}</ul>` : '')(
             b.never.split('\n').filter((l) => l.startsWith('- ')))}
-        </div>`).join('') || '<div class="empty">No businesses loaded.</div>'}
+        </div>`).join('') || '<div class="empty">No businesses yet. Add your first one.</div>'}
     </div>`;
 }
 
+const STEPS = [
+  { k: 'name', q: "What's the business called?", help: 'The name your customers know.', ph: 'Sunrise Bakery', need: true },
+  { k: 'sells', q: 'What do you sell?', help: 'A sentence or two. Max reads this to answer customers.', ph: 'Custom cakes and cupcakes, baked fresh to order.', area: true, need: true },
+  { k: 'website', q: 'Do you have a website?', help: 'Optional. Max links customers to it.', ph: 'https://sunrisebakery.example' },
+  { k: 'channels', q: 'Where do customers reach you?', help: 'Email and WhatsApp number. With several businesses, this is how Max tells them apart.', ph: 'hello@shop.in, WhatsApp +91 90000 00000', need: true },
+  { k: 'payment', q: 'How do customers pay?', help: 'Optional. Printed on quotes and invoices.', ph: '50% advance by UPI, the rest before dispatch.' },
+  { k: 'tone', q: 'How should Max sound?', help: 'A few words is enough.', ph: 'Warm, short, helpful. Prices in ₹.', need: true },
+  { k: 'negotiation', q: 'Can Max negotiate prices?', help: 'Pick one, or write your own rule.', need: true,
+    choices: [['No, fixed prices', 'none. Never discount; price questions come to me.'], ['Yes, within my price list', 'yes, within policy.tsv.']] },
+  { k: 'rows', q: 'What are your prices?', help: 'List: what Max quotes first. Floor: the lowest it may ever agree to. Target (optional): where you want to stay. Leave it empty if Max never negotiates.', table: true },
+  { k: 'never', q: 'What must Max never agree to?', help: 'One per line. These always come to you instead.', ph: 'Refunds after printing has started\nFree delivery', area: true },
+  { k: 'more', q: 'Anything else Max should know?', help: 'FAQs, delivery times, return policy. Optional.', area: true, big: true },
+];
+const POLICY_NOTES = ['# product\tunit\tlist_price\tfloor_price\tmin_qty\tmin_lead_days\ttarget_price'];
+const NEVER_HEAD = '# Never agree to (escalate to the owner instead)';
+const COLS = [['product', 'Product'], ['unit', 'Unit'], ['list', 'List'], ['floor', 'Floor'], ['target', 'Target'], ['minQty', 'Min qty'], ['lead', 'Min days']];
+let survey = null;   // { slug, isNew, step, f: the answers, err }
+
+function startSurvey(slug) {
+  const b = (data?.businesses || []).find((x) => x.slug === slug);
+  const f = { name: '', more: '', rows: [], never: '', notes: POLICY_NOTES, neverHead: NEVER_HEAD };
+  if (b) {
+    const rest = [];
+    for (const l of b.profile.replace(/\n+$/, '').split('\n')) {
+      const t = /^# (.*)$/.exec(l), k = BIZ_KEYS.find(([key, label]) => f[key] === undefined && l.startsWith(label + ':'));
+      if (t && !f.name) f.name = t[1];
+      else if (k) f[k[0]] = l.slice(k[1].length + 1).trim();
+      else rest.push(l);
+    }
+    f.name ||= b.slug;
+    f.more = rest.join('\n').trim();
+    f.rows = b.policy.map((p) => ({ ...p, target: p.target ?? '' }));
+    if (b.policyNotes?.length) f.notes = b.policyNotes;
+    const nv = b.never.split('\n');
+    f.never = nv.filter((l) => l.startsWith('- ')).map((l) => l.slice(2)).join('\n');
+    f.neverHead = nv.find((l) => l.startsWith('#')) || NEVER_HEAD;
+  }
+  survey = { slug: b?.slug || '', isNew: !b, step: 0, f, err: '' };
+  go('survey');
+}
+
+function surveyView() {
+  const s = survey, last = s.step === STEPS.length, st = STEPS[s.step], v = st ? (s.f[st.k] ?? '') : '';
+  const money0 = (x) => (x === '' || x == null ? '-' : money(Number(String(x).replace(/[^\d.]/g, ''))));
+  let input = '';
+  if (st?.table) input = `
+      <div class="ptable">
+        <div class="prow head">${COLS.map(([, l]) => `<span>${l}</span>`).join('')}<span></span></div>
+        ${s.f.rows.map((r, i) => `<div class="prow">${COLS.map(([c, l]) => `<input class="hud-input" data-row="${i}" data-col="${c}" aria-label="${l}"
+          value="${esc(r[c] ?? '')}" ${c === 'product' || c === 'unit' ? '' : 'inputmode="numeric"'} autocomplete="off">`).join('')}
+          <button class="hud red mini" data-row-rm="${i}" aria-label="Remove ${esc(r.product || 'row')}">Remove</button></div>`).join('')}
+      </div>
+      <button class="hud" data-row-add>Add a product</button>`;
+  else if (st?.choices) input = `
+      <div class="choices">${st.choices.map(([label, rule]) => `<button class="choice ${v === rule ? 'on' : ''}" data-choice="${esc(rule)}">${label}<small>${esc(rule)}</small></button>`).join('')}</div>
+      <input class="hud-input q-in" data-f="${st.k}" value="${esc(v)}" aria-label="Your own rule" placeholder="Or write your own rule…" autocomplete="off">`;
+  else if (st?.area) input = `<textarea class="hud-input q-in ${st.big ? 'big' : ''}" data-f="${st.k}" aria-label="${esc(st.q)}" placeholder="${esc(st.ph || '')}">${esc(v)}</textarea>`;
+  else if (st) input = `<input class="hud-input q-in" data-f="${st.k}" value="${esc(v)}" aria-label="${esc(st.q)}" placeholder="${esc(st.ph || '')}" autocomplete="off">`;
+  const review = !last ? '' : `<dl class="review">${STEPS.map((x, i) => `<div><dt>${esc(x.q)}</dt><dd>${esc(x.table
+    ? (s.f.rows.length ? s.f.rows.map((r) => `${r.product} ${money0(r.list)} (floor ${money0(r.floor)})`).join(', ') : 'No price list')
+    : (s.f[x.k] || '-'))}</dd><button class="hud mini" data-goto="${i}">Change</button></div>`).join('')}</dl>`;
+  return `
+    <div class="survey">
+      <div class="survey-top"><button class="hud mini red" data-survey-cancel>Cancel</button>
+        <progress max="${STEPS.length}" value="${s.step}" aria-label="Progress"></progress>
+        <span class="count">${last ? 'Review' : `${s.step + 1} of ${STEPS.length}`}</span></div>
+      <div class="q-page">
+        <div class="q-kicker">${s.isNew ? 'New business' : esc(s.f.name || s.slug)}</div>
+        <h1>${last ? 'Check it over' : esc(st.q)}</h1>
+        <p class="sub">${last ? 'Save to hand it to Max. It uses it straight away.' : esc(st.help)}</p>
+        ${input}${review}
+        <div class="q-err" aria-live="polite">${esc(s.err)}</div>
+        <div class="actions q-nav">
+          ${s.step ? '<button class="hud" data-survey="back">Back</button>' : ''}
+          <button class="hud amber" data-survey="${last ? 'save' : 'next'}">${last ? (s.isNew ? 'Add business' : 'Save changes') : 'Next'}</button>
+          ${last ? '' : `<span class="q-hint">${st.area ? 'Ctrl+Enter' : 'Enter'} for next</span>`}
+        </div>
+      </div>
+    </div>`;
+}
+
+// Copy what's on screen into the answers, then check this page. Returns an error message, or ''.
+function grabSurvey() {
+  const s = survey, st = STEPS[s.step];
+  document.querySelectorAll('[data-f]').forEach((el) => { s.f[el.dataset.f] = el.value.trim(); });
+  document.querySelectorAll('[data-row]').forEach((el) => { s.f.rows[el.dataset.row][el.dataset.col] = el.value.trim(); });
+  if (!st) return '';
+  if (st.need && !s.f[st.k]) return 'Fill this in to continue.';
+  if (st.k === 'name' && s.isNew) {
+    s.slug = s.f.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    if (!s.slug) return 'Use at least one letter or digit in the name.';
+    if ((data?.businesses || []).some((b) => b.slug === s.slug)) return 'You already have a business with this name.';
+  }
+  if (st.table) {
+    const n = (x) => Number(String(x ?? '').replace(/[^\d.]/g, ''));
+    s.f.rows = s.f.rows.filter((r) => COLS.some(([c]) => String(r[c] ?? '').trim()));
+    for (const r of s.f.rows) {
+      if (!r.product) return 'Every row needs a product name.';
+      if (!(n(r.list) > 0) || !(n(r.floor) > 0)) return `${r.product}: fill in the list and floor prices.`;
+      if (n(r.floor) > n(r.list)) return `${r.product}: the floor can't be above the list price.`;
+      if (String(r.target ?? '') !== '' && (n(r.target) < n(r.floor) || n(r.target) > n(r.list))) return `${r.product}: the target goes between the floor and the list price.`;
+    }
+  }
+  return '';
+}
+
+async function saveSurvey(btn) {
+  const f = survey.f, one = (x) => String(x ?? '').replace(/\s*\n\s*/g, ' ').trim();
+  const num = (x) => String(x ?? '').replace(/[^\d.]/g, '');
+  const files = {
+    'profile.md': `# ${one(f.name)}\n\n${BIZ_KEYS.filter(([k]) => one(f[k])).map(([k, label]) => `${label}: ${one(f[k])}`).join('\n')}\n${f.more ? '\n' + f.more + '\n' : ''}`,
+    'policy.tsv': [...f.notes, ...f.rows.map((r) => [one(r.product), one(r.unit) || 'piece', num(r.list), num(r.floor), num(r.minQty) || '1', num(r.lead) || '0', num(r.target)]
+      .join('\t').replace(/\t$/, ''))].join('\n') + '\n',
+    'never.md': [f.neverHead, ...f.never.split('\n').map(one).filter(Boolean).map((l) => '- ' + l)].join('\n') + '\n',
+  };
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await window.max.biz({ slug: survey.slug, files });
+    toast(`${one(f.name)} saved. Max uses it from now on.`);
+    survey = null;
+    await refresh();
+    go('business');
+  } catch (err) {
+    survey.err = err.message.replace(/^Error invoking remote method '\w+': (Error: )?/, '');
+    render();
+  }
+}
+
 /* ---------- Plumbing ---------- */
-const VIEWS = { inbox, chat: chatView, leads: leadsView, today: todayView, calendar: calendarView, shield: shieldView, business: businessView };
+const VIEWS = { inbox, chat: chatView, leads: leadsView, today: todayView, calendar: calendarView, shield: shieldView, business: businessView, survey: surveyView };
 
 function render() {
   const main = $('#view');
   const keep = $('#input')?.value;
   main.innerHTML = VIEWS[view]();
+  // Entrance animation only when the page (or survey question) changes, not on the background refresh.
+  const page = view === 'survey' ? `survey${survey?.step}` : view;
+  if (main.dataset.page !== page) {
+    main.classList.toggle('back', view === 'survey' && Number(main.dataset.page?.slice(6)) > survey?.step);
+    main.classList.remove('enter'); void main.offsetWidth; main.classList.add('enter');
+    main.dataset.page = page;
+  }
   document.querySelectorAll('.rail button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
-  $('#setBtn')?.classList.toggle('active', ['shield', 'business'].includes(view));
+  $('#setBtn')?.classList.toggle('active', ['shield', 'business', 'survey'].includes(view));
   const cal = $('#calPop');   // desktop only; left alone while you're typing an event into it
   if (cal && !document.activeElement?.matches('#calPop input')) cal.innerHTML = calBody();
   const n = (data?.leads || []).filter((l) => l.status === 'escalated').length;
   $('#badge').hidden = !n;
   $('#badge').textContent = n;
+  if (view === 'survey') ($('.q-in') || [...document.querySelectorAll('[data-col="product"]')].pop())?.focus();
   if (view === 'chat') {
     const log = $('#log'); log.scrollTop = log.scrollHeight;
     if (keep && $('#input')) $('#input').value = keep;
@@ -415,7 +557,7 @@ async function refresh(quiet = false) {
     data = await window.max.load();
     deskMode = await window.max.deskMode().catch(() => deskMode);
     if (!thinking) setStatus('on', 'Online');
-    if (!(view === 'chat' && $('#input')?.value)) render();
+    if (!(view === 'chat' && $('#input')?.value) && view !== 'survey') render();   // never wipe half-typed answers
   } catch (e) {
     setStatus('off', 'Offline');
     if (!quiet) toast(`Couldn't read from the server: ${e.message}`, true);
@@ -429,6 +571,21 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.win) return window.max.win(t.dataset.win);
   if (t.id === 'pcPill') { const pc = await window.max.pc('toggle'); return toast(`Now controlling your ${pc}`); }
   if (t.dataset.view) { if (t.closest('#setPop')) $('#setPop').hidePopover(); return go(t.dataset.view); }
+  if (t.dataset.bizNew !== undefined) return startSurvey(null);
+  if (t.dataset.bizEdit) return startSurvey(t.dataset.bizEdit);
+  if (t.dataset.surveyCancel !== undefined) { survey = null; return go('business'); }
+  if (survey && (t.dataset.survey || t.dataset.goto || t.dataset.choice || t.dataset.rowAdd !== undefined || t.dataset.rowRm)) {
+    const err = grabSurvey();
+    if (t.dataset.survey === 'save') return saveSurvey(t);
+    if (t.dataset.survey === 'next' && err) { survey.err = err; return render(); }
+    survey.err = '';
+    if (t.dataset.survey) survey.step += t.dataset.survey === 'next' ? 1 : -1;
+    if (t.dataset.goto) survey.step = Number(t.dataset.goto);
+    if (t.dataset.choice) survey.f[STEPS[survey.step].k] = t.dataset.choice;
+    if (t.dataset.rowAdd !== undefined) survey.f.rows.push({ product: '', unit: '', list: '', floor: '', target: '', minQty: '', lead: '' });
+    if (t.dataset.rowRm) survey.f.rows.splice(Number(t.dataset.rowRm), 1);
+    return render();
+  }
   if (t.dataset.chip) return send(t.dataset.chip);
   if (t.dataset.ask) return askAbout(t.dataset.ask, t.dataset.prompt);
   if (t.dataset.reload !== undefined) return location.reload();
@@ -496,6 +653,10 @@ document.addEventListener('submit', async (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.target.closest?.('.orb') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); return window.max.voice('open'); }
   if (e.target.id === 'input' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(e.target.value); }
+  // Survey: Enter (Ctrl+Enter in a text box) goes to the next question.
+  if (view === 'survey' && e.key === 'Enter' && e.target.matches('.q-in, [data-row]') && (e.ctrlKey || e.target.tagName !== 'TEXTAREA')) {
+    e.preventDefault(); $('[data-survey="next"]')?.click();
+  }
 });
 
 // Voice turns show up in the chat log too.

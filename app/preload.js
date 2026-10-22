@@ -27,5 +27,6 @@ contextBridge.exposeInMainWorld('max', {
   pc: (what) => ipcRenderer.invoke('pc', what),
   onPc: (cb) => ipcRenderer.on('pc-changed', (_e, pc) => cb(pc)),
   cal: (a) => ipcRenderer.invoke('cal', a),
+  biz: (b) => ipcRenderer.invoke('biz', b),
   win: (what) => ipcRenderer.send('win', what),
 });

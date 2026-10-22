@@ -15,6 +15,7 @@
   --red: #ff5a5a;            /* danger, shown on hover and in errors */
   --radius: 12px;
   --radius-sm: 8px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);   /* fast out, soft landing */
   --display: 'Rajdhani', 'Segoe UI', sans-serif;
   --mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
   color-scheme: dark;
@@ -32,10 +33,22 @@ body {
   grid-template-areas: 'bar bar' 'rail main';
   user-select: none;
 }
-.backdrop {
-  position: fixed; inset: 0; pointer-events: none; z-index: -1;
-  background: radial-gradient(900px 600px at 70% 20%, rgba(0, 123, 167, 0.09), transparent 70%);
+/* Aurora: two soft glows, cerulean and a little rose, drifting slowly behind everything. Each is its own layer and
+   only its transform animates, so the GPU moves an already-painted glow instead of repainting the page. */
+.backdrop { position: fixed; inset: 0; pointer-events: none; z-index: -1; overflow: hidden; }
+.backdrop::before, .backdrop::after { content: ''; position: absolute; will-change: transform; }
+.backdrop::before {
+  width: 75vw; height: 85vh; left: -10vw; top: -20vh;
+  background: radial-gradient(closest-side, rgba(0, 123, 167, 0.26), rgba(0, 123, 167, 0.08) 55%, transparent);
+  animation: aurora-a 28s ease-in-out infinite alternate;
 }
+.backdrop::after {
+  width: 60vw; height: 70vh; right: -12vw; bottom: -18vh;
+  background: radial-gradient(closest-side, rgba(255, 45, 149, 0.11), rgba(255, 45, 149, 0.03) 60%, transparent);
+  animation: aurora-b 34s ease-in-out infinite alternate;
+}
+@keyframes aurora-a { to { transform: translate(22vw, 14vh) scale(1.2); } }
+@keyframes aurora-b { to { transform: translate(-18vw, -12vh) scale(1.15); } }
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--blue-text); outline-offset: 2px; }
 
@@ -138,7 +151,8 @@ h1, h2, h3 { text-wrap: balance; }
 /* Cards */
 .group + .group { margin-top: 36px; }
 .cards { display: grid; gap: 12px; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; animation: rise 0.3s ease both; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; transition: border-color 0.2s, transform 0.2s; }
+.card:hover { border-color: var(--line-strong); }
 .card.escalated { box-shadow: inset 2px 0 0 var(--rose); }
 .card.due { box-shadow: inset 2px 0 0 var(--blue-text); }
 @keyframes rise { from { transform: translateY(6px); } }   /* no fade: a throttled background window must never leave cards invisible */
@@ -208,7 +222,8 @@ select.hud-input { font-family: var(--display); font-weight: 600; width: auto; c
 .log { overflow: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 6px; }
 .log::-webkit-scrollbar { width: 6px; }
 .log::-webkit-scrollbar-thumb { background: var(--line-strong); }
-.msg { max-width: 72ch; white-space: pre-wrap; user-select: text; text-wrap: pretty; overflow-wrap: anywhere; animation: rise 0.3s ease both; }
+.msg { max-width: 72ch; white-space: pre-wrap; user-select: text; text-wrap: pretty; overflow-wrap: anywhere; }
+.msg:last-child { animation: rise 0.35s var(--ease) both; }
 .msg.user { align-self: flex-end; background: var(--surface-2); padding: 10px 14px; border-radius: var(--radius) var(--radius) 4px var(--radius); }
 .msg.max { align-self: flex-start; padding-left: 14px; border-left: 2px solid var(--blue); }
 .msg.err { border-left-color: var(--red); color: #ffb3b3; }
@@ -266,8 +281,6 @@ ul.hudlist li .meta { margin-left: auto; font-size: 13px; color: var(--muted); }
 }
 #calPop { position-anchor: --cal; width: 340px; max-height: calc(100vh - 64px); overflow: auto; }
 #setPop { position-anchor: --set; padding: 6px; width: 260px; }
-.pop:popover-open { animation: pop-in 0.15s ease both; }
-@keyframes pop-in { from { opacity: 0; transform: translateY(-4px); } }
 .menu button {
   display: flex; gap: 12px; align-items: center; width: 100%; padding: 10px 12px; border: 0; border-radius: var(--radius-sm);
   background: transparent; color: var(--text); font: 600 16px var(--display); text-align: left; cursor: pointer;
@@ -341,9 +354,75 @@ body:has(.boot) .rail { visibility: hidden; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .card, .msg, .toast { animation: none; }
+  .card, .msg, .toast, .enter > *, .enter .card, .enter .panel, .q-page, .pop:popover-open, .backdrop::before, .backdrop::after { animation: none !important; }
+  * { transition-duration: 0s !important; }
 }
 
 /* Shield: the counts sit as a plain row under the title. */
 .shield-stats { max-width: 560px; margin: 0; padding: 0; border: 0; }
 .shield-stats .stat { text-align: left; }
+
+/* Motion. Pages rise in when you switch to them (not on the background refresh), cards and panels follow in a
+   short stagger, questions slide in the direction you're going. Transforms only, never from fully transparent: a
+   throttled background window must never leave content invisible. */
+@keyframes view-in { from { transform: translateY(12px); opacity: 0.4; } }
+@keyframes slide-in { from { transform: translateX(28px); opacity: 0.3; } }
+@keyframes slide-back { from { transform: translateX(-28px); opacity: 0.3; } }
+.enter > * { animation: view-in 0.45s var(--ease) both; }
+.enter .cards > *, .enter .grid > * { animation: view-in 0.5s var(--ease) both; }
+.enter .cards > :nth-child(2), .enter .grid > :nth-child(2) { animation-delay: 0.06s; }
+.enter .cards > :nth-child(3), .enter .grid > :nth-child(3) { animation-delay: 0.12s; }
+.enter .cards > :nth-child(n + 4), .enter .grid > :nth-child(n + 4) { animation-delay: 0.18s; }
+.enter .q-page { animation: slide-in 0.4s var(--ease) both; }
+.enter.back .q-page { animation-name: slide-back; }
+.enter .survey { animation: none; }
+button.hud:hover, .bar-btn:hover, .pc-pill:hover { transform: translateY(-1px); }
+button.hud:active, .bar-btn:active, .pc-pill:active { transform: translateY(1px); }
+.bar-btn, .pc-pill, .rail button { transition: background-color 0.15s, color 0.15s, transform 0.15s var(--ease); }
+.rail button.active::before { animation: grow 0.3s var(--ease) both; }
+@keyframes grow { from { transform: scaleY(0); } }
+.orb { transition: filter 0.3s, transform 0.4s var(--ease); }
+.orb:hover { transform: scale(1.03); }
+.toast { animation: toast-in 0.35s var(--ease) both; }
+@keyframes toast-in { from { transform: translateY(16px) scale(0.98); opacity: 0.3; } }
+.pop:popover-open { animation: pop-in 0.22s var(--ease) both; transform-origin: top right; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-6px) scale(0.97); } }
+.day, .choice, .menu button { transition: background-color 0.15s, color 0.15s, border-color 0.15s; }
+
+/* Businesses: header with the add button, edit on each card */
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.biz-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* Survey: one question per page */
+.survey { max-width: 720px; }
+.survey-top { display: flex; align-items: center; gap: 14px; margin-bottom: 48px; }
+.survey-top .count { font: 13px var(--mono); color: var(--muted); white-space: nowrap; }
+.survey progress { flex: 1; height: 4px; appearance: none; border: 0; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.survey progress::-webkit-progress-bar { background: var(--surface-2); }
+.survey progress::-webkit-progress-value { background: var(--blue-text); border-radius: 2px; transition: width 0.4s var(--ease); }
+.q-kicker { font-size: 14px; color: var(--blue-text); font-weight: 600; margin-bottom: 6px; }
+.q-page h1 { font-size: 34px; }
+.q-page .sub { margin-bottom: 22px; max-width: 60ch; }
+.q-in { width: 100%; font: 500 18px var(--display); padding: 12px 14px; }
+textarea.q-in { min-height: 120px; resize: vertical; line-height: 1.5; }
+textarea.q-in.big { min-height: 260px; font: 14px/1.55 var(--mono); }
+.q-err { min-height: 22px; margin-top: 10px; color: var(--red); font-size: 15px; }
+.q-nav { margin-top: 6px; }
+.q-nav button.hud { padding: 8px 20px; font-size: 16px; }
+.q-hint { color: var(--muted); font-size: 13px; margin-left: 6px; }
+.choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.choice {
+  text-align: left; padding: 14px 16px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface);
+  color: var(--text); font: 600 17px var(--display); cursor: pointer;
+}
+.choice small { display: block; margin-top: 4px; font: 500 13px var(--display); color: var(--muted); }
+.choice:hover { border-color: var(--blue-text); }
+.choice.on { border-color: var(--blue-text); background: rgba(0, 123, 167, 0.16); }
+.ptable { display: grid; gap: 6px; margin-bottom: 12px; overflow-x: auto; }
+.prow { display: grid; grid-template-columns: 1.6fr 0.9fr repeat(3, 0.9fr) 0.7fr 0.8fr auto; gap: 6px; align-items: center; min-width: 640px; }
+.prow .hud-input { width: 100%; min-width: 0; }
+.prow.head span { font-size: 13px; color: var(--muted); padding-left: 4px; }
+.review { margin: 0; display: grid; }
+.review > div { display: grid; grid-template-columns: 220px 1fr auto; gap: 16px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.review dt { color: var(--muted); font-size: 14px; }
+.review dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 7.5em; overflow: hidden; user-select: text; }
