@@ -453,3 +453,11 @@ textarea.q-in.big { min-height: 260px; font: 14px/1.55 var(--mono); }
 .review > div { display: grid; grid-template-columns: 220px 1fr auto; gap: 16px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .review dt { color: var(--muted); font-size: 14px; }
 .review dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 7.5em; overflow: hidden; user-select: text; }
+
+/* Voice settings: the speed slider */
+.voice-set { max-width: 520px; margin-inline: 0; display: grid; gap: 10px; }
+.speed-row { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; }
+.speed-row output { font: 600 16px var(--mono); color: var(--blue-text); }
+#speed { width: 100%; accent-color: var(--blue); height: 28px; cursor: pointer; }
+.speed-ends { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-top: -6px; }
+.voice-set button { justify-self: start; margin-top: 6px; }

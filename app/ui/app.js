@@ -300,6 +300,31 @@ function shieldView() {
     </div>`;
 }
 
+/* ---------- Voice ----------
+   How fast Max talks, on the PC and on calls (one setting on the server, shared by both apps). */
+let speed = null;   // fetched when the page opens
+const speedLabel = (v) => `${Number(v).toFixed(2)}×${Number(v) === 1 ? ' (normal)' : ''}`;
+function voiceView() {
+  if (speed === null) {
+    window.max.voiceSpeed().then((v) => { speed = v; if (view === 'voice') render(); }, (e) => toast(e.message, true));
+    return '<h1>Voice</h1><div class="sub">Loading…</div>';
+  }
+  return `
+    <h1>Voice</h1>
+    <div class="sub">How fast Max talks, on this PC and on calls.</div>
+    <div class="panel voice-set">
+      <div class="speed-row"><label for="speed">Speaking speed</label><output id="speedOut">${speedLabel(speed)}</output></div>
+      <input type="range" id="speed" min="0.7" max="1.2" step="0.05" value="${speed}" aria-describedby="speedOut">
+      <div class="speed-ends"><span>Slower</span><span>Faster</span></div>
+      ${speed !== 1 ? '<button class="hud" data-speed-reset>Back to normal</button>' : ''}
+    </div>`;
+}
+async function saveSpeed(v) {
+  try { speed = await window.max.voiceSpeed(v); toast(`Voice speed ${speedLabel(speed)}`); }
+  catch (err) { toast(err.message.replace(/^Error invoking remote method '\w+': (Error: )?/, ''), true); }
+  render();
+}
+
 /* ---------- Calendar ---------- */
 let calMonth = null;   // 'YYYY-MM' shown in the month grid
 let calDay = null;     // selected day 'YYYY-MM-DD'
@@ -511,7 +536,7 @@ async function saveSurvey(btn) {
 }
 
 /* ---------- Plumbing ---------- */
-const VIEWS = { inbox, chat: chatView, leads: leadsView, shield: shieldView, business: businessView, survey: surveyView };
+const VIEWS = { inbox, chat: chatView, leads: leadsView, shield: shieldView, business: businessView, survey: surveyView, voice: voiceView };
 
 function render() {
   const main = $('#view');
@@ -525,7 +550,7 @@ function render() {
     main.dataset.page = page;
   }
   document.querySelectorAll('.rail button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
-  $('#setBtn')?.classList.toggle('active', ['shield', 'business', 'survey'].includes(view));
+  $('#setBtn')?.classList.toggle('active', ['shield', 'business', 'survey', 'voice'].includes(view));
   const cal = $('#calPop');   // desktop only; left alone while you're typing an event into it
   if (cal && !document.activeElement?.matches('#calPop input')) cal.innerHTML = calBody();
   const n = (data?.leads || []).filter((l) => l.status === 'escalated').length;
@@ -559,6 +584,7 @@ document.addEventListener('click', async (e) => {
   if (t.dataset.win) return window.max.win(t.dataset.win);
   if (t.id === 'pcPill') { const pc = await window.max.pc('toggle'); return toast(`Now controlling your ${pc}`); }
   if (t.dataset.view) { if (t.closest('#setPop')) $('#setPop').hidePopover?.(); return go(t.dataset.view); }
+  if (t.dataset.speedReset !== undefined) return saveSpeed(1);
   if (t.dataset.bizNew !== undefined) return startSurvey(null);
   if (t.dataset.bizEdit) return startSurvey(t.dataset.bizEdit);
   if (t.dataset.surveyCancel !== undefined) { survey = null; return go('business'); }
@@ -622,7 +648,10 @@ document.addEventListener('click', async (e) => {
     }
   }
 });
+// The speed slider: the number follows while you drag, and it saves when you let go.
+document.addEventListener('input', (e) => { if (e.target.id === 'speed') $('#speedOut').textContent = speedLabel(e.target.value); });
 document.addEventListener('change', (e) => {
+  if (e.target.id === 'speed') return saveSpeed(Number(e.target.value));
   if (e.target.dataset.filter) { leadFilter[e.target.dataset.filter] = e.target.value; render(); }
 });
 document.addEventListener('submit', async (e) => {

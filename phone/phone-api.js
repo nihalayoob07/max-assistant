@@ -375,7 +375,7 @@ async function callInfo(id) {
     if (c.theirs) buttons.push({ label: `ACCEPT ${money(c.theirs)}`, style: 'primary', decision: { action: 'accept', price: c.theirs } });
     if (c.counter) buttons.push({ label: `COUNTER ${money(c.counter)}`, style: 'action', decision: { action: 'counter', price: c.counter, drop: 0 } });
     buttons.push({ label: 'DECLINE', style: 'danger', decision: { action: 'decline' } });
-    return { id, kind, title: `${c.business} · ${c.product}`.toUpperCase(), sub: `${c.contact} · ${id}`,
+    return { id, kind, title: `${c.business}: ${c.product}`, sub: `${c.contact} · ${id}`,
       info: c.ours ? `THEIR OFFER ${money(c.theirs)} · WE'RE AT ${money(c.ours)} · FLOOR ${money(c.floor)}` : '', say: script(c), buttons, deal: c };
   }
   if (kind === 'event') {
@@ -384,23 +384,23 @@ async function callInfo(id) {
     if (!e) throw new Error('that event is gone from the calendar');
     const say = isReminder(e) ? `${HI} Your reminder: ${e.title.replace(/^remind(er)?:?\s*(me\s*(to)?\s*)?/i, '')}.`
       : `${HI} ${e.title} is at ${hm12(e.start)}, in about ten minutes.`;
-    return { id, kind, title: e.title.toUpperCase(), sub: `${e.start === 'allday' ? 'All day' : e.start} · ${date}`, info: '',
+    return { id, kind, title: e.title, sub: `${e.start === 'allday' ? 'All day' : e.start} · ${date}`, info: '',
       say: `${say} Anything you need from me?`, buttons: [] };
   }
   if (kind === 'question') {
     const q = (await questions()).find((x) => `q:${x.id}` === id);
     if (!q) throw new Error('that question was already answered');
-    if (q.kind === 'handler') return { id, kind, title: `NEW CHAT · ${q.chat}`.toUpperCase(), sub: 'WhatsApp', info: '',
+    if (q.kind === 'handler') return { id, kind, title: `New chat: ${q.chat}`, sub: 'WhatsApp', info: '',
       say: `${HI} A new WhatsApp chat from ${person(q.chat)}. They said: ${q.them}. Should I handle it, or will you?`,
       buttons: [{ label: 'MAX HANDLES IT', style: 'primary', decision: { action: 'handler', handler: 'max' } },
         { label: "I'LL HANDLE IT", style: 'action', decision: { action: 'handler', handler: 'me' } }] };
-    return { id, kind, title: `QUESTION · ${q.chat}`.toUpperCase(), sub: 'WhatsApp', info: q.ask,
+    return { id, kind, title: `Question: ${q.chat}`, sub: 'WhatsApp', info: q.ask,
       say: `${HI} ${person(q.chat)} on WhatsApp needs you: ${q.ask}. They said: ${q.them}. What should I tell them?`,
       buttons: [{ label: "I'LL REPLY MYSELF", style: 'action', decision: { action: 'skip' } }] };
   }
-  if (kind === 'owner') return { id, kind, title: 'YOU CALLED MAX', sub: '', info: '', say: `${HI} What can I do for you?`, buttons: [] };
+  if (kind === 'owner') return { id, kind, title: 'You called Max', sub: '', info: '', say: `${HI} What can I do for you?`, buttons: [] };
   const [data, orders] = await Promise.all([load(), sh(ORDERS).then(parseOrders).catch(() => [])]);
-  return { id, kind, title: 'MORNING BRIEF', sub: data.today, info: '', say: brief(data, orders), buttons: [] };
+  return { id, kind, title: 'Your morning brief', sub: data.today, info: '', say: brief(data, orders), buttons: [] };
 }
 
 // After a brief or a reminder the call is a conversation with main Max (each call keeps its own short history).
@@ -516,13 +516,23 @@ const authed = (req) => {
 };
 // The call's voice: ElevenLabs, when max.config has ELEVENLABS_API_KEY. The key stays here on the server; the phone
 // gets MP3 back and falls back to its own voice if this fails. Only the words Max says go to ElevenLabs.
+// How fast the voice talks (0.7 to 1.2). Set from either app's Settings; the desktop reads the same file over SSH.
+const voiceSpeed = (set) => {
+  if (set !== undefined) {
+    const v = Math.round(Number(set) * 100) / 100;
+    if (!(v >= 0.7 && v <= 1.2)) throw new Error('speed goes from 0.7 to 1.2');
+    write('voice-speed', String(v));
+  }
+  return Number(read('voice-speed')) || Number(process.env.ELEVENLABS_SPEED) || 1;
+};
 async function speech(text) {
   if (!process.env.ELEVENLABS_API_KEY) throw new Error('no ElevenLabs key in max.config');
   const voice = process.env.ELEVENLABS_VOICE || 'q1OMOTZNtqpS50TIQtu4';
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_64`, {
     method: 'POST', signal: AbortSignal.timeout(20000),
     headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: String(text || '').slice(0, 2500), model_id: process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5' }),
+    body: JSON.stringify({ text: String(text || '').slice(0, 2500), model_id: process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5',
+      voice_settings: { speed: voiceSpeed() } }),
   });
   if (!r.ok) throw new Error(`ElevenLabs said ${r.status}`);
   return { audio: Buffer.from(await r.arrayBuffer()).toString('base64') };
@@ -542,6 +552,7 @@ const ROUTES = {
   'POST /call/decide': (j) => decideCall(callId(j.id), j),
   'POST /ring': async (j) => { await ring(callId(j.id)); return { ok: true }; },
   'POST /tts': (j) => speech(j.text),
+  'POST /voice-speed': async (j) => ({ speed: voiceSpeed(j.speed) }),
 };
 if (require.main === module) {
   fs.mkdirSync(CFG, { recursive: true, mode: 0o700 });

@@ -30,8 +30,12 @@ VOICE_FIXES=""
 # desktop, the phone's own on calls). With a key, the words Max says go to ElevenLabs to be spoken.
 # Get one with: npx -y @elevenlabs/cli@latest onboard init
 ELEVENLABS_API_KEY=""
-ELEVENLABS_VOICE=""     # a voice id from elevenlabs.io/voices; empty = the default voice
-ELEVENLABS_MODEL=""     # empty = eleven_flash_v2_5 (fastest); eleven_v4 sounds best but answers slower
+# A voice id from elevenlabs.io/voices (library voices need a paid plan); empty = the default voice.
+ELEVENLABS_VOICE=""
+# Empty = eleven_flash_v2_5 (fastest); eleven_v4 sounds best but answers slower.
+ELEVENLABS_MODEL=""
+# How fast Max talks, 0.7 to 1.2; empty = 1, the voice's normal pace (eleven_v4 ignores it).
+ELEVENLABS_SPEED=""
 
 # --- The sandbox (change only if you know why) ---
 SANDBOX=max

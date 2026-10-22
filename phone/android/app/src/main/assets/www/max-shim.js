@@ -29,6 +29,7 @@
     cal: (a) => api('POST', '/cal', a),
     ring: (id) => api('POST', '/ring', { id }),   // phone only: the Setup screen's server tests
     calls: (on) => api('POST', '/calls', { on }).then((r) => r.on),   // phone only: Max's calls on/off
+    voiceSpeed: (set) => api('POST', '/voice-speed', set === undefined ? {} : { speed: set }).then((r) => r.speed),
     pc: async () => 'phone',
     voice: () => window.go?.('chat'),   // the core opens Chat (the voice conversation is the call screen)
     onStream: noop, cancelChat: noop, onChatAppend: noop, onPc: noop, win: noop,

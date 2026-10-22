@@ -378,10 +378,26 @@ setInterval(async () => {
 // Max says goes to ElevenLabs to be spoken; Kokoro above stays the fallback (no key, offline, out of credits).
 // Raw 24 kHz PCM comes back, turned into the same float samples Kokoro gives, so voice mode plays both alike.
 let eleven = null;
+// How fast the voice talks (0.7 to 1.2), set in either app's Settings. It lives on the server next to the phone API
+// (~/.config/max-phone/voice-speed), so calls and the desktop always agree. Read once, then kept here.
+let SPEED = null;
+const SPEED_FILE = '~/.config/max-phone/voice-speed';
+async function voiceSpeed(set) {
+  if (set !== undefined) {
+    const v = Math.round(Number(set) * 100) / 100;
+    if (!(v >= 0.7 && v <= 1.2)) throw new Error('Speed goes from 0.7 to 1.2');
+    await run(['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', HOST, `mkdir -p ~/.config/max-phone && printf %s ${v} > ${SPEED_FILE}`], 15000);
+    return (SPEED = v);
+  }
+  SPEED ??= Number((await run(['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', HOST, `cat ${SPEED_FILE} 2>/dev/null; true`], 15000)).trim())
+    || Number(CFG.ELEVENLABS_SPEED) || 1;
+  return SPEED;
+}
+ipcMain.handle('voiceSpeed', (_e, set) => voiceSpeed(set));
 async function elevenSpeech(text) {
   eleven ||= import('@elevenlabs/elevenlabs-js').then(({ ElevenLabsClient }) => new ElevenLabsClient({ apiKey: CFG.ELEVENLABS_API_KEY }));
   const stream = await (await eleven).textToSpeech.convert(CFG.ELEVENLABS_VOICE || 'q1OMOTZNtqpS50TIQtu4',
-    { text, modelId: CFG.ELEVENLABS_MODEL || 'eleven_flash_v2_5', outputFormat: 'pcm_24000' });
+    { text, modelId: CFG.ELEVENLABS_MODEL || 'eleven_flash_v2_5', outputFormat: 'pcm_24000', voiceSettings: { speed: await voiceSpeed().catch(() => 1) } });
   const bytes = Buffer.from(await new Response(stream).arrayBuffer());
   const audio = new Float32Array(bytes.length >> 1);
   for (let i = 0; i < audio.length; i++) audio[i] = bytes.readInt16LE(i * 2) / 32768;
@@ -886,7 +902,7 @@ else app.whenReady().then(async () => {
         for (let i = 0; i < 60 && await win.webContents.executeJavaScript('thinking'); i++) await wait(2000);
       }
       const open = (id) => `go('inbox'); document.getElementById('${id}').showPopover()`;   // the top-bar bubbles
-      const shots = { inbox: "go('inbox')", chat: "go('chat')", leads: "go('leads')", shield: "go('shield')", business: "go('business')",
+      const shots = { inbox: "go('inbox')", chat: "go('chat')", leads: "go('leads')", shield: "go('shield')", business: "go('business')", voice: "go('voice')",
         calendar: open('calPop'), 'calendar-add': open('calPop') + "; document.getElementById('addWrap').open = true", settings: open('setPop'), survey: "startSurvey(data.businesses[0]?.slug)" };
       for (const [v, js] of Object.entries(shots)) {
         await win.webContents.executeJavaScript(`document.querySelectorAll(':popover-open').forEach((p) => p.hidePopover()); ${js}`);
