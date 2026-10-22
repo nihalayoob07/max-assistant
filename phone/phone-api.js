@@ -514,6 +514,20 @@ const authed = (req) => {
   const got = Buffer.from(String(req.headers.authorization || '').replace(/^Bearer /, ''));
   return got.length === Buffer.byteLength(KEY) && crypto.timingSafeEqual(got, Buffer.from(KEY));
 };
+// The call's voice: ElevenLabs, when max.config has ELEVENLABS_API_KEY. The key stays here on the server; the phone
+// gets MP3 back and falls back to its own voice if this fails. Only the words Max says go to ElevenLabs.
+async function speech(text) {
+  if (!process.env.ELEVENLABS_API_KEY) throw new Error('no ElevenLabs key in max.config');
+  const voice = process.env.ELEVENLABS_VOICE || 'q1OMOTZNtqpS50TIQtu4';
+  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_64`, {
+    method: 'POST', signal: AbortSignal.timeout(20000),
+    headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: String(text || '').slice(0, 2500), model_id: process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5' }),
+  });
+  if (!r.ok) throw new Error(`ElevenLabs said ${r.status}`);
+  return { audio: Buffer.from(await r.arrayBuffer()).toString('base64') };
+}
+
 const ROUTES = {
   'GET /health': async () => ({ ok: true }),
   'GET /data': async () => ({ ...(await load()), deskMode: deskMode(), callsOn: callsOn() }),
@@ -527,6 +541,7 @@ const ROUTES = {
   'POST /call/answer': (j) => answer(callId(j.id), String(j.text || '').slice(0, 500)),
   'POST /call/decide': (j) => decideCall(callId(j.id), j),
   'POST /ring': async (j) => { await ring(callId(j.id)); return { ok: true }; },
+  'POST /tts': (j) => speech(j.text),
 };
 if (require.main === module) {
   fs.mkdirSync(CFG, { recursive: true, mode: 0o700 });

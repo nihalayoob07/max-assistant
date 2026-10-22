@@ -10,6 +10,7 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -20,6 +21,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Base64
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -31,6 +33,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
+import java.io.File
 import java.util.Locale
 import kotlin.concurrent.thread
 
@@ -144,9 +147,46 @@ class CallActivity : Activity() {
         t.setPitch(0.9f)
     }
 
+    private var player: MediaPlayer? = null
+    private var said = 0   // bumped by every line and by stopVoice(): a late ElevenLabs reply for an old line is dropped
+
+    /** Max's voice: ElevenLabs, made by the server (POST /tts, so the key never sits on the phone), else the phone's
+     *  own TextToSpeech when the server can't (no key, offline, out of credits). */
     private fun say(text: String, then: (() -> Unit)? = null) {
         line("Max", text)
         status.text = "Max is speaking"
+        audio.mode = AudioManager.MODE_IN_COMMUNICATION
+        audio.isSpeakerphoneOn = speaker
+        // The screen shows the text as written; the voice uses the server's pronunciation hints (SAY_NAME).
+        var spoken = text
+        deal?.optJSONObject("pronounce")?.let { p -> p.keys().forEach { k -> spoken = spoken.replace(Regex("\\b${Regex.escape(k)}\\b"), p.getString(k)) } }
+        val n = ++said
+        thread {
+            val mp3 = runCatching { Base64.decode(JSONObject(Api.call(this, "POST", "/tts", JSONObject().put("text", spoken).toString(), 25_000)).getString("audio"), Base64.DEFAULT) }
+                .onFailure { Log.w("MaxCall", "ElevenLabs voice: ${it.message}") }.getOrNull()
+            runOnUiThread {
+                if (n != said || isFinishing) return@runOnUiThread
+                if (mp3 == null || !play(mp3, then)) speakLocal(spoken.replace("₹", "rupees "), then)
+            }
+        }
+    }
+
+    private fun play(mp3: ByteArray, then: (() -> Unit)?) = runCatching {
+        val f = File(cacheDir, "say.mp3").apply { writeBytes(mp3) }
+        player?.release()
+        player = MediaPlayer().apply {
+            setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            setDataSource(f.path)
+            setOnCompletionListener { then?.invoke() }
+            prepare()
+            start()
+        }
+    }.onFailure { Log.w("MaxCall", "playing the voice: ${it.message}") }.isSuccess
+
+    private fun stopVoice() { said++; tts?.stop(); player?.release(); player = null }
+
+    private fun speakLocal(spoken: String, then: (() -> Unit)?) {
         val t = tts
         if (t == null || !ttsReady) { handler.postDelayed({ then?.invoke() }, 1500); return }
         val id = System.nanoTime().toString()
@@ -155,11 +195,6 @@ class CallActivity : Activity() {
             override fun onDone(u: String?) { if (u == id) runOnUiThread { then?.invoke() } }
             @Deprecated("old API") override fun onError(u: String?) { if (u == id) runOnUiThread { then?.invoke() } }
         })
-        audio.mode = AudioManager.MODE_IN_COMMUNICATION
-        audio.isSpeakerphoneOn = speaker
-        // The screen shows the text as written; the voice uses the server's pronunciation hints (SAY_NAME).
-        var spoken = text.replace("₹", "rupees ")
-        deal?.optJSONObject("pronounce")?.let { p -> p.keys().forEach { k -> spoken = spoken.replace(Regex("\\b${Regex.escape(k)}\\b"), p.getString(k)) } }
         t.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, id)
     }
 
@@ -296,7 +331,7 @@ class CallActivity : Activity() {
         callRow = row().apply { visibility = View.GONE }
         speakerBtn = button("Speaker", blue, false) { toggleSpeaker() }
         callRow.addView(speakerBtn, weight())
-        callRow.addView(button("Talk", blue, false) { misses = 0; if (!busy) { tts?.stop(); pending = null; listen() } }, weight())
+        callRow.addView(button("Talk", blue, false) { misses = 0; if (!busy) { stopVoice(); pending = null; listen() } }, weight())
         callRow.addView(button("Hang up", grey, true) { hangUp() }, weight())
         col.addView(callRow)
         ringRow = row()
@@ -367,6 +402,7 @@ class CallActivity : Activity() {
         handler.removeCallbacksAndMessages(null)
         recognizer?.destroy()
         tts?.shutdown()
+        player?.release()
         if (answered) { audio.isSpeakerphoneOn = false; audio.mode = AudioManager.MODE_NORMAL }
         super.onDestroy()
     }

@@ -10,6 +10,7 @@
     "dist": "electron-builder --win nsis --x64"
   },
   "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.74.0",
     "@fontsource/jetbrains-mono": "^5.0.0",
     "@fontsource/rajdhani": "^5.0.0",
     "@huggingface/transformers": "^4.3.1",

@@ -26,3 +26,6 @@ app/dist/
 # Your settings (bin/install makes it from max.config.example)
 max.config
 brag-output*/
+
+# ElevenLabs CLI key (onboard connect)
+.env.local

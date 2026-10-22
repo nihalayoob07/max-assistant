@@ -26,6 +26,12 @@ SAY_NAME=""
 SITES=""
 # Names the speech recogniser mishears: Right Name=heard as|heard as; next, e.g. "Sunrise Bakery=sun rise bakery|sunrise baker"
 VOICE_FIXES=""
+# ElevenLabs voice for desktop voice mode and phone calls. Leave the key empty to keep the local voices (Kokoro on the
+# desktop, the phone's own on calls). With a key, the words Max says go to ElevenLabs to be spoken.
+# Get one with: npx -y @elevenlabs/cli@latest onboard init
+ELEVENLABS_API_KEY=""
+ELEVENLABS_VOICE=""     # a voice id from elevenlabs.io/voices; empty = the default voice
+ELEVENLABS_MODEL=""     # empty = eleven_flash_v2_5 (fastest); eleven_v4 sounds best but answers slower
 
 # --- The sandbox (change only if you know why) ---
 SANDBOX=max

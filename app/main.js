@@ -374,9 +374,24 @@ setInterval(async () => {
   const p = ttsP; ttsP = null;
   (await p.catch(() => null))?.model?.dispose?.();
 }, 60000);
+// The ElevenLabs voice, when max.config on the server has ELEVENLABS_API_KEY (read with the rest of CFG). The text
+// Max says goes to ElevenLabs to be spoken; Kokoro above stays the fallback (no key, offline, out of credits).
+// Raw 24 kHz PCM comes back, turned into the same float samples Kokoro gives, so voice mode plays both alike.
+let eleven = null;
+async function elevenSpeech(text) {
+  eleven ||= import('@elevenlabs/elevenlabs-js').then(({ ElevenLabsClient }) => new ElevenLabsClient({ apiKey: CFG.ELEVENLABS_API_KEY }));
+  const stream = await (await eleven).textToSpeech.convert(CFG.ELEVENLABS_VOICE || 'q1OMOTZNtqpS50TIQtu4',
+    { text, modelId: CFG.ELEVENLABS_MODEL || 'eleven_flash_v2_5', outputFormat: 'pcm_24000' });
+  const bytes = Buffer.from(await new Response(stream).arrayBuffer());
+  const audio = new Float32Array(bytes.length >> 1);
+  for (let i = 0; i < audio.length; i++) audio[i] = bytes.readInt16LE(i * 2) / 32768;
+  return { audio, sampling_rate: 24000 };
+}
+
 const cancelled = new Set();
 async function speak(sender, id, text) {
-  const model = await tts();
+  await serverConfig().catch(() => {});   // the key lives in the server's max.config; offline, Kokoro speaks
+  let useEleven = !!CFG.ELEVENLABS_API_KEY;
   // Whole answer in one go: per-sentence generation made Max stop and start, because each piece took
   // about as long to make as to say, and lost the flow between sentences. Only long answers are split,
   // into ~350-character paragraphs at sentence ends.
@@ -387,7 +402,9 @@ async function speak(sender, id, text) {
   }
   for (let i = 0; i < chunks.length; i++) {
     if (cancelled.has(id) || sender.isDestroyed()) break;
-    const out = await model.generate(chunks[i].trim(), { voice: VOICE });
+    let out = null;
+    if (useEleven) out = await elevenSpeech(chunks[i].trim()).catch((e) => { console.error('ElevenLabs:', e.message); useEleven = false; return null; });
+    out ||= await (await tts()).generate(chunks[i].trim(), { voice: VOICE });
     if (cancelled.has(id) || sender.isDestroyed()) break;
     sender.send('tts', { id, rate: out.sampling_rate, pcm: out.audio.buffer.slice(0), last: i === chunks.length - 1 });
   }
