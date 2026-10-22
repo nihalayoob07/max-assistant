@@ -289,33 +289,57 @@ ul.hudlist li .meta { margin-left: auto; font-size: 13px; color: var(--muted); }
 .menu svg { width: 20px; height: 20px; color: var(--blue-text); flex: none; }
 .menu small { display: block; font-size: 13px; font-weight: 500; color: var(--muted); }
 
-/* Calendar (in the bubble; the phone shows it as a page) */
-.month-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.month-head h2 { margin: 0; font-size: 17px; }
-.month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
-.dow { font-size: 12px; color: var(--muted); text-align: center; padding: 2px 0; }
+/* Calendar (in the bubble; the phone shows it as a page). Glass: the aurora shows through the bubble. */
+#calPop {
+  background: rgba(24, 25, 28, 0.58); border-color: rgba(255, 255, 255, 0.12); padding: 18px;
+  backdrop-filter: blur(22px) saturate(150%); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.month-head { display: flex; align-items: baseline; gap: 4px; margin-bottom: 12px; }
+.month-head h2 { margin: 0 auto 0 0; font-size: 26px; font-weight: 700; }
+.month-head h2 span { font-size: 15px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+.cal-nav {
+  width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.06); color: var(--text);
+  font-size: 17px; line-height: 1; cursor: pointer; transition: background-color 0.15s, transform 0.15s var(--ease);
+}
+.cal-nav:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
+.month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.dow { font-size: 12px; color: var(--muted); text-align: center; padding: 2px 0 4px; }
 .day {
-  height: 38px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text); font: 500 14px var(--mono);
+  height: 38px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font: 500 14px var(--mono);
   cursor: pointer; position: relative;
 }
-.day:hover { background: rgba(255, 255, 255, 0.07); }
-.day.now { color: var(--blue-text); font-weight: 700; }
-.day.sel { background: var(--blue); color: #fff; }
+.day.we { color: #6f747c; }
+.day:hover { background: rgba(255, 255, 255, 0.08); }
+.day.now { color: var(--blue-text); box-shadow: inset 0 0 0 1.5px var(--blue-text); font-weight: 700; }
+.day.sel { background: var(--rose); color: var(--bg); box-shadow: 0 6px 18px rgba(255, 45, 149, 0.35); font-weight: 700; }
 .day.has::after, .day.due::before { content: ''; position: absolute; bottom: 4px; width: 4px; height: 4px; border-radius: 50%; }
 .day.has::after { left: calc(50% - 2px); background: var(--blue-text); }     /* an event */
 .day.due::before { left: calc(50% - 2px); background: var(--rose); }         /* a todo deadline */
 .day.has.due::after { left: calc(50% + 1px); }
 .day.has.due::before { left: calc(50% - 5px); }
-.day.sel.has::after { background: #fff; }
-.cal-day { margin: 16px 0 4px; font-size: 15px; }
-.add-ev { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-.add-ev .hud-input { width: 100%; min-width: 0; }
-.add-ev .wide, .add-ev button, .add-ev [type="date"] { grid-column: 1 / -1; }
-ul.evs { list-style: none; margin: 0; padding: 0; }
-.ev { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
-.ev:last-child { border-bottom: 0; }
-.ev-time { font: 600 13px var(--mono); color: var(--blue-text); min-width: 54px; font-variant-numeric: tabular-nums; }
+.day.sel.has::after, .day.sel.due::before { background: var(--bg); }
+.cal-day { margin: 18px 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+ul.evs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ev { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); }
+.ev-time { font: 600 13px var(--mono); color: var(--blue-text); min-width: 46px; font-variant-numeric: tabular-nums; }
+.ev.is-due .ev-time { color: var(--rose); }
 .ev-title { flex: 1; min-width: 0; user-select: text; overflow-wrap: anywhere; }
+.ev-rm { border: 0; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; border-radius: 6px; padding: 0 6px; }
+.ev-rm:hover { color: var(--red); background: rgba(255, 90, 90, 0.1); }
+#calPop .empty { padding: 4px 0; }
+.add-wrap { margin-top: 12px; }
+.add-wrap summary {
+  list-style: none; cursor: pointer; padding: 8px 12px; border-radius: 10px; border: 1px dashed rgba(255, 255, 255, 0.2);
+  color: var(--text); font-weight: 600; transition: border-color 0.15s, background-color 0.15s;
+}
+.add-wrap summary::-webkit-details-marker { display: none; }
+.add-wrap summary:hover { border-color: var(--blue-text); background: rgba(0, 123, 167, 0.12); }
+.add-wrap summary .c, .add-wrap[open] summary .o { display: none; }
+.add-wrap[open] summary .c { display: inline; }
+.add-wrap[open] summary { border: 0; padding: 0 0 8px; color: var(--muted); font-weight: 500; background: transparent; text-align: right; }
+.add-ev { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; animation: view-in 0.3s var(--ease) both; }
+.add-ev .hud-input { width: 100%; min-width: 0; background: rgba(10, 10, 10, 0.6); }
+.add-ev .wide, .add-ev button, .add-ev [type="date"] { grid-column: 1 / -1; }
 .cal-page { max-width: 420px; }
 
 /* Inbox: the week ahead and todos */

@@ -870,7 +870,7 @@ else app.whenReady().then(async () => {
       }
       const open = (id) => `go('inbox'); document.getElementById('${id}').showPopover()`;   // the top-bar bubbles
       const shots = { inbox: "go('inbox')", chat: "go('chat')", leads: "go('leads')", shield: "go('shield')", business: "go('business')",
-        calendar: open('calPop'), settings: open('setPop'), survey: "startSurvey(data.businesses[0]?.slug)" };
+        calendar: open('calPop'), 'calendar-add': open('calPop') + "; document.getElementById('addWrap').open = true", settings: open('setPop'), survey: "startSurvey(data.businesses[0]?.slug)" };
       for (const [v, js] of Object.entries(shots)) {
         await win.webContents.executeJavaScript(`document.querySelectorAll(':popover-open').forEach((p) => p.hidePopover()); ${js}`);
         await wait(1500);
