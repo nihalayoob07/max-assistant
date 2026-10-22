@@ -856,8 +856,11 @@ else app.whenReady().then(async () => {
         await wait(5000);
         for (let i = 0; i < 60 && await win.webContents.executeJavaScript('thinking'); i++) await wait(2000);
       }
-      for (const v of ['inbox', 'chat', 'leads', 'today', 'calendar', 'business']) {
-        await win.webContents.executeJavaScript(`go(${JSON.stringify(v)})`);
+      const open = (id) => `go('inbox'); document.getElementById('${id}').showPopover()`;   // the top-bar bubbles
+      const shots = { inbox: "go('inbox')", chat: "go('chat')", leads: "go('leads')", shield: "go('shield')", business: "go('business')",
+        calendar: open('calPop'), settings: open('setPop') };
+      for (const [v, js] of Object.entries(shots)) {
+        await win.webContents.executeJavaScript(`document.querySelectorAll(':popover-open').forEach((p) => p.hidePopover()); ${js}`);
         await wait(1500);
         await win.webContents.capturePage();   // the first capture can still show the previous screen
         await wait(300);

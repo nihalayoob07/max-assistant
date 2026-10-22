@@ -32,6 +32,11 @@ function setStatus(kind, text) {
 
 const today = () => data?.today || new Date().toISOString().slice(0, 10);
 const isDue = (l) => l.next && l.next <= today() && !CLOSED.includes(l.status) && l.status !== 'escalated';
+// Todos read like "hackathon submission (due 2026-10-30, added 2026-10-18)": a due date puts them on the calendar.
+const todoItems = () => (data?.todos || []).map((t) => ({
+  title: t.replace(/\s*\((?:due|added)[^)]*\)\s*$/, '') || t, due: (/\(due (\d{4}-\d{2}-\d{2})/.exec(t) || [])[1] || '',
+}));
+const deadlines = () => todoItems().filter((t) => t.due).map((t) => ({ date: t.due, start: 'due', title: t.title }));
 function weekAgo() { const d = new Date(today()); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); }
 const statusTag = (s) => `<span class="tag ${{ escalated: 'amber', agreed: 'green', paid: 'green', lost: 'red', junk: 'dim', new: 'green' }[s] || ''}">${esc(s)}</span>`;
 
@@ -111,6 +116,13 @@ function inbox() {
     ? `<section class="group"><h2>${title}<span class="count">${items.length}</span></h2><div class="cards">${items.map(draw).join('')}</div></section>` : '';
   const feed = group('Needs your decision', esc8, decision) + group('Follow-ups due', due, (l) => card(l, 'due')) +
     group('New conversations', fresh, (l) => card(l, 'new'));
+  // The next 2 weeks of events and todo deadlines (overdue deadlines stay until done), and every open todo.
+  const end = new Date(today() + 'T00:00'); end.setDate(end.getDate() + 14);
+  const agenda = [...(data?.events || []), ...deadlines()]
+    .filter((e) => e.date <= ymd(end) && (e.date >= today() || e.start === 'due'))
+    .sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const dayWord = (d) => (d < today() ? 'Overdue' : d === today() ? 'Today' : dayLabel(d));
+  const dueTag = (d) => `<span class="tag ${d <= today() ? 'amber' : ''}">${d < today() ? 'Overdue' : d === today() ? 'Due today' : 'Due ' + esc(dayLabel(d))}</span>`;
   return `
     <h1>Inbox</h1>
     <div class="sub">${esc(new Date(today() + 'T00:00').toLocaleDateString(data?.cfg?.locale || 'en-IN', { weekday: 'long', day: 'numeric', month: 'long' }))}</div>
@@ -127,8 +139,22 @@ function inbox() {
         ${deskMode ? `<button class="switch ${deskMode === 'auto' ? 'on' : ''}" id="deskMode" role="switch" aria-checked="${deskMode === 'auto'}"
           title="${deskMode === 'auto' ? 'Max sends WhatsApp replies itself; you get a copy on Telegram' : 'Each WhatsApp reply waits for your Send on Telegram'}">
           <span class="knob"></span><span>WhatsApp auto-send ${deskMode === 'auto' ? 'on' : 'off'}</span></button>` : ''}
+        <button class="hud amber brief" data-chip="Brief me">Brief me now</button>
       </aside>
-      <div>${feed || '<div class="empty big"><b>Nothing needs you.</b>Decisions, follow-ups and new leads show up here.</div>'}</div>
+      <div>
+        ${feed || '<div class="empty lead"><b>Nothing needs a decision.</b> New leads, follow-ups and price questions show up here.</div>'}
+        <div class="grid two ${feed ? 'gap-above' : ''}">
+          <section class="panel"><h2>Coming up</h2>
+            ${agenda.length ? `<ul class="hudlist agenda">${agenda.map((e) => `<li><span class="when ${e.date < today() ? 'late' : ''}">${esc(dayWord(e.date))}</span>
+              <span class="t">${e.start === 'due' ? 'Due' : esc(when(e))}</span><span class="what">${esc(e.title)}</span></li>`).join('')}</ul>`
+              : '<div class="empty">Nothing in the next 2 weeks.</div>'}
+          </section>
+          <section class="panel"><h2>Todos<span class="count">${todoItems().length}</span></h2>
+            ${todoItems().length ? `<ul class="hudlist">${todoItems().map((t) => `<li><span class="what">${esc(t.title)}</span>${t.due ? dueTag(t.due) : ''}</li>`).join('')}</ul>`
+              : '<div class="empty">Nothing on your list. Tell Max to add something.</div>'}
+          </section>
+        </div>
+      </div>
     </div>`;
 }
 
@@ -286,7 +312,7 @@ function shieldView() {
     <div class="panel gap-above"><h2>Recent</h2>
       ${items.length ? `<ul class="hudlist">${items.map((s) => {
         const [label, tone] = SHIELD_KINDS[s.kind] || [s.kind, 'dim'];
-        return `<li><span class="tag ${tone}">${esc(label)}</span> ${esc(s.detail)}<span class="meta">${esc(s.who)}, ${esc(s.at)}</span></li>`;
+        return `<li><span class="tag ${tone}">${esc(label)}</span><span class="what">${esc(s.detail)}</span><span class="meta">${esc(s.who)}, ${esc(s.at)}</span></li>`;
       }).join('')}</ul>` : '<div class="empty">Nothing caught yet.</div>'}
     </div>`;
 }
@@ -299,55 +325,46 @@ const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 const dayLabel = (s) => new Date(s + 'T00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
 const when = (e) => (e.start === 'allday' ? 'All day' : e.start + (e.end ? ' to ' + e.end : ''));
 
-function calendarView() {
+// The calendar bubble (top bar): month grid, the picked day's events and todo deadlines, and a quick add.
+function calBody() {
   const events = (data?.events || []).slice().sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const dues = deadlines();
   calDay ||= today();
   calMonth ||= calDay.slice(0, 7);
   const [y, m] = calMonth.split('-').map(Number);
   const lead = (new Date(y, m - 1, 1).getDay() + 6) % 7;      // weeks start on Monday
   const days = new Date(y, m, 0).getDate();
   const busy = new Set(events.map((e) => e.date));
+  const due = new Set(dues.map((e) => e.date));
   const cells = [...Array(lead).fill(''), ...Array.from({ length: days }, (_, i) => ymd(new Date(y, m - 1, i + 1)))];
-  const row = (e, withDay) => `<li class="ev">${withDay ? `<span class="ev-day">${esc(dayLabel(e.date))}</span>` : ''}
-    <span class="ev-time">${esc(when(e))}</span><span class="ev-title">${esc(e.title)}</span>
-    <button class="hud red mini" data-cal-rm="${esc(e.id)}" aria-label="Delete ${esc(e.title)}">Delete</button></li>`;
-  const dayEvents = events.filter((e) => e.date === calDay);
-  const upcoming = events.filter((e) => e.date >= today()).slice(0, 12);
+  const row = (e) => `<li class="ev"><span class="ev-time">${e.start === 'due' ? 'Due' : esc(when(e))}</span><span class="ev-title">${esc(e.title)}</span>
+    ${e.id ? `<button class="hud red mini" data-cal-rm="${esc(e.id)}" aria-label="Delete ${esc(e.title)}">Delete</button>` : '<span class="tag">Todo</span>'}</li>`;
+  const dayItems = [...events, ...dues].filter((e) => e.date === calDay);
   const cell = (c) => (c
-    ? `<button class="day ${c === calDay ? 'sel' : ''} ${c === today() ? 'now' : ''} ${busy.has(c) ? 'has' : ''}" data-day="${c}">${Number(c.slice(8))}</button>`
+    ? `<button class="day ${c === calDay ? 'sel' : ''} ${c === today() ? 'now' : ''} ${busy.has(c) ? 'has' : ''} ${due.has(c) ? 'due' : ''}" data-day="${c}">${Number(c.slice(8))}</button>`
     : '<div></div>');
   return `
-    <h1>Calendar</h1>
-    <div class="sub">Your schedule. Max adds to it when you mention a time.</div>
-    <div class="grid cal">
-      <div class="panel">
-        <div class="month-head">
-          <button class="hud" data-month="-1" aria-label="Previous month">‹</button>
-          <h2 class="flush">${MONTHS[m - 1]} ${y}</h2>
-          <button class="hud" data-month="1" aria-label="Next month">›</button>
-        </div>
-        <div class="month">
-          ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => `<div class="dow">${d}</div>`).join('')}
-          ${cells.map(cell).join('')}
-        </div>
-        <form class="add-ev" id="addEv">
-          <input class="hud-input" type="date" id="evDate" value="${calDay}" aria-label="Date">
-          <input class="hud-input" type="time" id="evTime" aria-label="Start time">
-          <input class="hud-input" type="time" id="evEnd" aria-label="End time (optional)">
-          <input class="hud-input wide" id="evTitle" placeholder="Call with the bakery…" aria-label="Event" autocomplete="off">
-          <button class="hud amber" type="submit">Add event</button>
-        </form>
-      </div>
-      <div class="grid stack">
-        <div class="panel"><h2>${esc(dayLabel(calDay))}</h2>
-          ${dayEvents.length ? `<ul class="evs">${dayEvents.map((e) => row(e, false)).join('')}</ul>` : '<div class="empty">Nothing scheduled. Add something on the left, or tell Max.</div>'}
-        </div>
-        <div class="panel"><h2>Coming up</h2>
-          ${upcoming.length ? `<ul class="evs">${upcoming.map((e) => row(e, true)).join('')}</ul>` : '<div class="empty">Your next two weeks are clear.</div>'}
-        </div>
-      </div>
-    </div>`;
+    <div class="month-head">
+      <button class="hud mini" data-month="-1" aria-label="Previous month">‹</button>
+      <h2>${MONTHS[m - 1]} ${y}</h2>
+      <button class="hud mini" data-month="1" aria-label="Next month">›</button>
+    </div>
+    <div class="month">
+      ${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) => `<div class="dow">${d}</div>`).join('')}
+      ${cells.map(cell).join('')}
+    </div>
+    <h3 class="cal-day">${esc(dayLabel(calDay))}</h3>
+    ${dayItems.length ? `<ul class="evs">${dayItems.map(row).join('')}</ul>` : '<div class="empty">Nothing on this day.</div>'}
+    <form class="add-ev" id="addEv">
+      <input class="hud-input wide" id="evTitle" placeholder="Add an event…" aria-label="Event" autocomplete="off">
+      <input class="hud-input" type="date" id="evDate" value="${calDay}" aria-label="Date">
+      <input class="hud-input" type="time" id="evTime" aria-label="Start time">
+      <input class="hud-input" type="time" id="evEnd" aria-label="End time (optional)">
+      <button class="hud amber" type="submit">Add</button>
+    </form>`;
 }
+// The phone still has a Calendar tab: the same contents as a page.
+const calendarView = () => `<h1>Calendar</h1><div class="sub">Your schedule. Max adds to it when you mention a time.</div><div class="panel cal-page">${calBody()}</div>`;
 
 /* ---------- Businesses ---------- */
 function businessView() {
@@ -379,6 +396,9 @@ function render() {
   const keep = $('#input')?.value;
   main.innerHTML = VIEWS[view]();
   document.querySelectorAll('.rail button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  $('#setBtn')?.classList.toggle('active', ['shield', 'business'].includes(view));
+  const cal = $('#calPop');   // desktop only; left alone while you're typing an event into it
+  if (cal && !document.activeElement?.matches('#calPop input')) cal.innerHTML = calBody();
   const n = (data?.leads || []).filter((l) => l.status === 'escalated').length;
   $('#badge').hidden = !n;
   $('#badge').textContent = n;
@@ -408,7 +428,7 @@ document.addEventListener('click', async (e) => {
   if (!t) return;
   if (t.dataset.win) return window.max.win(t.dataset.win);
   if (t.id === 'pcPill') { const pc = await window.max.pc('toggle'); return toast(`Now controlling your ${pc}`); }
-  if (t.dataset.view) return go(t.dataset.view);
+  if (t.dataset.view) { if (t.closest('#setPop')) $('#setPop').hidePopover(); return go(t.dataset.view); }
   if (t.dataset.chip) return send(t.dataset.chip);
   if (t.dataset.ask) return askAbout(t.dataset.ask, t.dataset.prompt);
   if (t.dataset.reload !== undefined) return location.reload();
@@ -468,6 +488,7 @@ document.addEventListener('submit', async (e) => {
   try {
     await window.max.cal(a);
     calDay = a.date; calMonth = a.date.slice(0, 7);
+    document.activeElement?.blur();   // so the bubble redraws with the new event
     toast('Added to your calendar');
     await refresh();
   } catch (err) { toast(err.message.replace(/^Error invoking remote method '\w+': (Error: )?/, ''), true); }

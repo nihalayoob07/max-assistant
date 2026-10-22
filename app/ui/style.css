@@ -1,5 +1,6 @@
 /* Max HUD. Jet black, cerulean for structure (active tab, lines, the core), neon rose for the one action that
-   matters on a card, grey for everything else. Square corners, no glow on text, few boxes: space groups things. */
+   matters on a card, grey for everything else. Rounded corners (12px boxes, 8px controls, pills for tags), no glow
+   on text, few boxes: space groups things. */
 :root {
   --bg: #0a0a0a;
   --surface: #121314;
@@ -12,6 +13,8 @@
   --blue-text: #4fb8e0;      /* cerulean tint for text and icons */
   --rose: #ff2d95;           /* the action */
   --red: #ff5a5a;            /* danger, shown on hover and in errors */
+  --radius: 12px;
+  --radius-sm: 8px;
   --display: 'Rajdhani', 'Segoe UI', sans-serif;
   --mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
   color-scheme: dark;
@@ -58,7 +61,7 @@ body {
 .pc-pill {
   -webkit-app-region: no-drag; display: flex; align-items: center; gap: 8px; cursor: pointer;
   padding: 4px 10px; border: 1px solid var(--line-strong); background: transparent; color: var(--text);
-  font: 600 14px var(--display);
+  font: 600 14px var(--display); border-radius: var(--radius-sm);
 }
 .pc-pill svg { width: 16px; height: 16px; color: var(--muted); }
 .pc-pill:hover { background: rgba(255, 255, 255, 0.06); }
@@ -69,19 +72,19 @@ body[data-pc="server"] .pc-pill svg { color: var(--rose); }
 .rail { grid-area: rail; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 12px; border-right: 1px solid var(--line); }
 .rail button {
   position: relative; width: 44px; height: 44px; border: 0; background: transparent; color: var(--muted);
-  cursor: pointer; display: grid; place-items: center;
+  cursor: pointer; display: grid; place-items: center; border-radius: var(--radius-sm);
 }
 .rail button svg { width: 22px; height: 22px; }
 .rail button:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
 .rail button.active { color: var(--text); background: rgba(0, 123, 167, 0.16); }
-.rail button.active::before { content: ''; position: absolute; left: -10px; top: 10px; bottom: 10px; width: 2px; background: var(--blue-text); }
+.rail button.active::before { content: ''; position: absolute; left: -10px; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--blue-text); }
 .rail button .badge {
   position: absolute; top: 4px; right: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
   background: var(--rose); color: var(--bg); font: 700 10px/16px var(--mono);
 }
 .rail button[data-tip]:hover::after {
   content: attr(data-tip); position: absolute; left: 54px; white-space: nowrap; padding: 4px 10px; z-index: 10;
-  background: var(--surface-2); border: 1px solid var(--line-strong); color: var(--text); font-size: 14px;
+  background: var(--surface-2); border: 1px solid var(--line-strong); color: var(--text); font-size: 14px; border-radius: var(--radius-sm);
 }
 
 /* Main area */
@@ -93,9 +96,9 @@ h1 { margin: 0 0 2px; font-size: 30px; font-weight: 700; letter-spacing: 0.02em;
 h1, h2, h3 { text-wrap: balance; }
 .sub { color: var(--muted); font-size: 15px; margin-bottom: 28px; text-wrap: pretty; }
 
-.panel { background: var(--surface); border: 1px solid var(--line); padding: 20px 22px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; min-width: 0; }
 .panel h2, .group h2 { margin: 0 0 14px; font-size: 17px; font-weight: 600; }
-.group h2 .count { margin-left: 8px; color: var(--muted); font: 13px var(--mono); }
+.panel h2 .count, .group h2 .count { margin-left: 8px; color: var(--muted); font: 13px var(--mono); }
 
 .grid { display: grid; gap: 24px; }
 .stack { gap: 32px; }
@@ -135,7 +138,7 @@ h1, h2, h3 { text-wrap: balance; }
 /* Cards */
 .group + .group { margin-top: 36px; }
 .cards { display: grid; gap: 12px; }
-.card { background: var(--surface); border: 1px solid var(--line); padding: 16px 18px; animation: rise 0.3s ease both; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; animation: rise 0.3s ease both; }
 .card.escalated { box-shadow: inset 2px 0 0 var(--rose); }
 .card.due { box-shadow: inset 2px 0 0 var(--blue-text); }
 @keyframes rise { from { transform: translateY(6px); } }   /* no fade: a throttled background window must never leave cards invisible */
@@ -144,7 +147,7 @@ h1, h2, h3 { text-wrap: balance; }
 .card .meta { font-size: 13px; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
 .card .need { margin: 6px 0 14px; color: #c4c8ce; user-select: text; text-wrap: pretty; overflow-wrap: anywhere; }
 
-.tag { font-size: 13px; font-weight: 600; padding: 1px 8px; background: rgba(255, 255, 255, 0.06); color: #c4c8ce; white-space: nowrap; }
+.tag { font-size: 13px; font-weight: 600; padding: 1px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: #c4c8ce; white-space: nowrap; }
 .tag.amber { color: var(--rose); background: rgba(255, 45, 149, 0.12); }
 .tag.green { color: var(--blue-text); background: rgba(0, 123, 167, 0.18); }
 .tag.red { color: var(--red); background: rgba(255, 90, 90, 0.1); }
@@ -154,7 +157,7 @@ h1, h2, h3 { text-wrap: balance; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 button.hud {
   font: 600 15px var(--display); color: var(--text); background: transparent; border: 1px solid var(--line-strong);
-  padding: 6px 14px; cursor: pointer; white-space: nowrap;
+  padding: 6px 14px; cursor: pointer; white-space: nowrap; border-radius: var(--radius-sm);
   transition: background-color 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
 }
 button.hud:hover { background: rgba(255, 255, 255, 0.07); }
@@ -169,7 +172,7 @@ button.hud.red:hover { color: var(--red); background: rgba(255, 90, 90, 0.08); }
 button.hud.mini { padding: 2px 10px; font-size: 14px; }
 .hud-input, select.hud-input {
   font: 15px var(--mono); color: var(--text); background: var(--bg); border: 1px solid var(--line-strong);
-  padding: 6px 10px; width: 130px; outline: none; color-scheme: dark;
+  padding: 6px 10px; width: 130px; outline: none; color-scheme: dark; border-radius: var(--radius-sm);
 }
 .hud-input:focus { border-color: var(--blue-text); }
 .hud-input::placeholder { color: #6b7078; }
@@ -206,13 +209,14 @@ select.hud-input { font-family: var(--display); font-weight: 600; width: auto; c
 .log::-webkit-scrollbar { width: 6px; }
 .log::-webkit-scrollbar-thumb { background: var(--line-strong); }
 .msg { max-width: 72ch; white-space: pre-wrap; user-select: text; text-wrap: pretty; overflow-wrap: anywhere; animation: rise 0.3s ease both; }
-.msg.user { align-self: flex-end; background: var(--surface-2); padding: 10px 14px; }
+.msg.user { align-self: flex-end; background: var(--surface-2); padding: 10px 14px; border-radius: var(--radius) var(--radius) 4px var(--radius); }
 .msg.max { align-self: flex-start; padding-left: 14px; border-left: 2px solid var(--blue); }
 .msg.err { border-left-color: var(--red); color: #ffb3b3; }
+.compose button.hud { border-radius: var(--radius); }
 .compose { display: flex; gap: 10px; align-items: stretch; }
 .compose textarea {
   flex: 1; resize: none; height: 52px; background: var(--surface); border: 1px solid var(--line-strong); color: var(--text);
-  font: 16px var(--display); padding: 12px 14px; outline: none;
+  font: 16px var(--display); padding: 12px 14px; outline: none; border-radius: var(--radius);
 }
 .compose textarea:focus { border-color: var(--blue-text); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -246,33 +250,74 @@ ul.hudlist li .meta { margin-left: auto; font-size: 13px; color: var(--muted); }
 .biz .sells { color: #c4c8ce; margin: 4px 0 12px; user-select: text; }
 .biz h2 { margin-top: 24px; }
 
-/* Calendar */
-.cal { grid-template-columns: minmax(320px, 400px) 1fr; align-items: start; }
-.month-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.month-head h2 { margin: 0; }
+/* Top-bar buttons and their bubbles (native popovers, anchored under the button that opens them). */
+.bar-btn {
+  -webkit-app-region: no-drag; width: 34px; height: 30px; display: grid; place-items: center; cursor: pointer;
+  border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted);
+}
+.bar-btn svg { width: 19px; height: 19px; }
+.bar-btn:hover, .bar-btn.active { color: var(--text); background: rgba(255, 255, 255, 0.07); }
+#calBtn { anchor-name: --cal; }
+#setBtn { anchor-name: --set; }
+.pop {
+  margin: 0; inset: auto; top: calc(anchor(bottom) + 8px); right: anchor(right);
+  padding: 16px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--radius);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+#calPop { position-anchor: --cal; width: 340px; max-height: calc(100vh - 64px); overflow: auto; }
+#setPop { position-anchor: --set; padding: 6px; width: 260px; }
+.pop:popover-open { animation: pop-in 0.15s ease both; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-4px); } }
+.menu button {
+  display: flex; gap: 12px; align-items: center; width: 100%; padding: 10px 12px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text); font: 600 16px var(--display); text-align: left; cursor: pointer;
+}
+.menu button:hover { background: rgba(255, 255, 255, 0.07); }
+.menu svg { width: 20px; height: 20px; color: var(--blue-text); flex: none; }
+.menu small { display: block; font-size: 13px; font-weight: 500; color: var(--muted); }
+
+/* Calendar (in the bubble; the phone shows it as a page) */
+.month-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.month-head h2 { margin: 0; font-size: 17px; }
 .month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
-.dow { font-size: 13px; color: var(--muted); text-align: center; padding: 4px 0; }
+.dow { font-size: 12px; color: var(--muted); text-align: center; padding: 2px 0; }
 .day {
-  height: 44px; border: 0; background: transparent; color: var(--text); font: 500 14px var(--mono);
+  height: 38px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text); font: 500 14px var(--mono);
   cursor: pointer; position: relative;
 }
-.day:hover { background: rgba(255, 255, 255, 0.06); }
+.day:hover { background: rgba(255, 255, 255, 0.07); }
 .day.now { color: var(--blue-text); font-weight: 700; }
 .day.sel { background: var(--blue); color: #fff; }
-.day.has::after { content: ''; position: absolute; left: 50%; bottom: 5px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--rose); }
-.add-ev { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+.day.has::after, .day.due::before { content: ''; position: absolute; bottom: 4px; width: 4px; height: 4px; border-radius: 50%; }
+.day.has::after { left: calc(50% - 2px); background: var(--blue-text); }     /* an event */
+.day.due::before { left: calc(50% - 2px); background: var(--rose); }         /* a todo deadline */
+.day.has.due::after { left: calc(50% + 1px); }
+.day.has.due::before { left: calc(50% - 5px); }
+.day.sel.has::after { background: #fff; }
+.cal-day { margin: 16px 0 4px; font-size: 15px; }
+.add-ev { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 .add-ev .hud-input { width: 100%; min-width: 0; }
 .add-ev .wide, .add-ev button, .add-ev [type="date"] { grid-column: 1 / -1; }
 ul.evs { list-style: none; margin: 0; padding: 0; }
-.ev { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.ev { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .ev:last-child { border-bottom: 0; }
-.ev-day { font-size: 14px; color: var(--muted); min-width: 92px; }
-.ev-time { font: 600 14px var(--mono); color: var(--blue-text); min-width: 110px; font-variant-numeric: tabular-nums; }
-.ev-title { flex: 1; min-width: 0; user-select: text; }
+.ev-time { font: 600 13px var(--mono); color: var(--blue-text); min-width: 54px; font-variant-numeric: tabular-nums; }
+.ev-title { flex: 1; min-width: 0; user-select: text; overflow-wrap: anywhere; }
+.cal-page { max-width: 420px; }
+
+/* Inbox: the week ahead and todos */
+.core .brief { margin-top: 8px; }
+.empty.lead { padding: 0 0 20px; }
+.empty.lead b { color: var(--text); }
+.agenda li { flex-wrap: nowrap; }
+.agenda .when { min-width: 92px; color: var(--muted); font-size: 14px; }
+.agenda .when.late { color: var(--rose); }
+.agenda .t { min-width: 54px; font: 600 13px var(--mono); color: var(--blue-text); font-variant-numeric: tabular-nums; }
+ul.hudlist .what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
 .toast {
   position: fixed; right: 24px; bottom: 24px; padding: 10px 16px; background: var(--surface-2); border: 1px solid var(--line-strong);
-  border-left: 2px solid var(--blue-text); font-size: 15px; max-width: 480px; animation: rise 0.25s ease both; z-index: 60;
+  border-left: 2px solid var(--blue-text); border-radius: var(--radius-sm); font-size: 15px; max-width: 480px; animation: rise 0.25s ease both; z-index: 60;
 }
 .toast.err { border-left-color: var(--red); }
 
@@ -291,7 +336,7 @@ body:has(.boot) .rail { visibility: hidden; }
 /* Narrow window: one column. */
 @media (max-width: 960px) {
   main { padding: 24px; }
-  .home, .two, .cal { grid-template-columns: 1fr; }
+  .home, .two { grid-template-columns: 1fr; }
   .core { position: static; }
 }
 
