@@ -157,16 +157,19 @@ function deskMode(set) {
 
 /* ---------- Chat with main Max (its API on the host, port 8642) ---------- */
 let maxToken = '';
-async function chat(messages) {
-  const last = messages.filter((m) => m.role === 'user').pop()?.content;
-  const hello = smallTalk(last, OWNER);
+// Small talk and the common questions (list, calendar, follow-ups, leads, brief) answered straight away, or null.
+async function instant(text) {
+  const hello = smallTalk(text, OWNER);
   if (hello) return hello;
-  const want = intent(last);
-  if (want) {
-    const [data, orders] = await Promise.all([load(), want.kind === 'brief' ? sh(ORDERS).then(parseOrders).catch(() => []) : []]);
-    const quick = quickAnswer(want, data, { owner: OWNER, orders });
-    if (quick) return quick;
-  }
+  const want = intent(text);
+  if (!want) return null;
+  const [data, orders] = await Promise.all([load(), want.kind === 'brief' ? sh(ORDERS).then(parseOrders).catch(() => []) : []]);
+  return quickAnswer(want, data, { owner: OWNER, orders });
+}
+
+async function chat(messages) {
+  const quick = await instant(messages.filter((m) => m.role === 'user').pop()?.content);
+  if (quick) return quick;
   if (!maxToken) {
     maxToken = await new Promise((resolve) => execFile('/bin/sh', ['-c', 'export PATH=$HOME/.local/bin:$PATH; nemohermes max gateway-token --quiet 2>/dev/null | tail -1'],
       { timeout: 30000 }, (_e, out) => resolve(String(out || '').trim())));
@@ -380,7 +383,7 @@ async function talk(id, said, opening) {
   if (!talks.has(id)) talks.set(id, [{ role: 'assistant', content: opening }]);
   const m = talks.get(id);
   m.push({ role: 'user', content: `(On a phone call with you, so answer in a few short spoken sentences, no lists or markdown.) ${said}` });
-  const reply = await chat(m);
+  const reply = await instant(said) || await chat(m);   // what was said, before the call note, so "hello" still matches
   m.push({ role: 'assistant', content: reply });
   if (talks.size > 20) talks.delete(talks.keys().next().value);
   return reply.replace(/[*_#`>|]/g, '').replace(/\n+/g, ' ');
