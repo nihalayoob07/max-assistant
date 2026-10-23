@@ -38,7 +38,8 @@ class Bridge(private val act: MainActivity) {
         return JSONObject()
             .put("mic", ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
             .put("notifications", nm.areNotificationsEnabled())
-            .put("fullScreen", if (Build.VERSION.SDK_INT >= 34) nm.canUseFullScreenIntent() else true)
+            // The call screen also needs "display over other apps": without it Android 10+ (and vivo) blocks opening it from the background.
+            .put("fullScreen", (Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()) && Settings.canDrawOverlays(ctx))
             .put("battery", pm.isIgnoringBatteryOptimizations(ctx.packageName))
             .put("speech", SpeechRecognizer.isRecognitionAvailable(ctx))
             .put("push", Push.configured(ctx))
@@ -56,7 +57,9 @@ class Bridge(private val act: MainActivity) {
             "notifications" ->
                 if (Build.VERSION.SDK_INT >= 33) act.runOnUiThread { act.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2) }
                 else act.open(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName))
-            "fullScreen" -> if (Build.VERSION.SDK_INT >= 34) act.open(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))
+            "fullScreen" ->
+                if (!Settings.canDrawOverlays(ctx)) act.open(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, pkg))
+                else if (Build.VERSION.SDK_INT >= 34) act.open(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))
             // Sideloaded, so the direct "let it run in the background" prompt is fine (Play would object).
             "battery" -> act.open(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, pkg))
             "autostart" -> first(

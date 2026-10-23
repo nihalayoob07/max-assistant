@@ -10,7 +10,7 @@ function setupItems() {
   const items = [
     ['mic', 'Microphone', 'So you can answer Max by voice on a call.', p.mic],
     ['notifications', 'Notifications', 'Calls arrive as a notification first.', p.notifications],
-    ['fullScreen', 'Full-screen calls', 'Lets the call screen open over the lock screen.', p.fullScreen],
+    ['fullScreen', 'Full-screen calls', 'Lets the call screen pop up over other apps and the lock screen ("Display over other apps").', p.fullScreen],
     ['battery', 'Battery optimisation off', 'Choose “Allow”, so Android never puts Max to sleep.', p.battery],
   ];
   if (p.vivo) items.push(
