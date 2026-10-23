@@ -75,7 +75,7 @@ class CallActivity : Activity() {
     private var busy = false            // a decision is being written: no more listening
     private var pending: JSONObject? = null   // a decision Max read back, waiting for "yes"
     private var misses = 0
-    private var speaker = false
+    private var speaker = true   // Max plays on the loudspeaker as media (full quality); the button switches to the earpiece
     private val audio by lazy { getSystemService(AudioManager::class.java) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,14 +117,11 @@ class CallActivity : Activity() {
         ringRow.visibility = View.GONE
         callRow.visibility = View.VISIBLE
         status.text = "Connecting…"
-        audio.mode = AudioManager.MODE_IN_COMMUNICATION
-        audio.isSpeakerphoneOn = speaker
+        route()
         tts = TextToSpeech(this) { ok ->
             ttsReady = ok == TextToSpeech.SUCCESS
             ttsInit = true
             tts?.let { pickVoice(it) }
-            tts?.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             if (deal != null && !ttsStarted) begin()
         }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
@@ -155,8 +152,7 @@ class CallActivity : Activity() {
     private fun say(text: String, then: (() -> Unit)? = null) {
         line("Max", text)
         status.text = "Max is speaking"
-        audio.mode = AudioManager.MODE_IN_COMMUNICATION
-        audio.isSpeakerphoneOn = speaker
+        route()
         // The screen shows the text as written; the voice uses the server's pronunciation hints (SAY_NAME).
         var spoken = text
         deal?.optJSONObject("pronounce")?.let { p -> p.keys().forEach { k -> spoken = spoken.replace(Regex("\\b${Regex.escape(k)}\\b"), p.getString(k)) } }
@@ -175,14 +171,24 @@ class CallActivity : Activity() {
         val f = File(cacheDir, "say.mp3").apply { writeBytes(mp3) }
         player?.release()
         player = MediaPlayer().apply {
-            setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            setAudioAttributes(voiceAttrs())
             setDataSource(f.path)
             setOnCompletionListener { then?.invoke() }
             prepare()
             start()
         }
     }.onFailure { Log.w("MaxCall", "playing the voice: ${it.message}") }.isSuccess
+
+    /** Loudspeaker: Max plays as media, at full quality. Earpiece: as call audio, held to the ear like a phone call; the
+     *  call path's processing (narrow band, compression, noise suppression) dulls the voice, so it isn't the default. */
+    private fun route() {
+        audio.mode = if (speaker) AudioManager.MODE_NORMAL else AudioManager.MODE_IN_COMMUNICATION
+        audio.isSpeakerphoneOn = false
+        tts?.setAudioAttributes(voiceAttrs())
+    }
+    private fun voiceAttrs() = AudioAttributes.Builder()
+        .setUsage(if (speaker) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_VOICE_COMMUNICATION)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
 
     private fun stopVoice() { said++; tts?.stop(); player?.release(); player = null }
 
@@ -329,7 +335,7 @@ class CallActivity : Activity() {
         dealRow = row().apply { visibility = View.GONE }
         col.addView(dealRow)
         callRow = row().apply { visibility = View.GONE }
-        speakerBtn = button("Speaker", blue, false) { toggleSpeaker() }
+        speakerBtn = button("Earpiece", blue, false) { toggleSpeaker() }
         callRow.addView(speakerBtn, weight())
         callRow.addView(button("Talk", blue, false) { misses = 0; if (!busy) { stopVoice(); pending = null; listen() } }, weight())
         callRow.addView(button("Hang up", grey, true) { hangUp() }, weight())
@@ -355,7 +361,7 @@ class CallActivity : Activity() {
 
     private fun toggleSpeaker() {
         speaker = !speaker
-        audio.isSpeakerphoneOn = speaker
+        route()
         speakerBtn.text = if (speaker) "Earpiece" else "Speaker"
     }
 

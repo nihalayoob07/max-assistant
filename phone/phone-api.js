@@ -499,14 +499,16 @@ const voiceSpeed = (set) => {
 async function speech(text) {
   if (!process.env.ELEVENLABS_API_KEY) throw new Error('no ElevenLabs key in max.config');
   const voice = process.env.ELEVENLABS_VOICE || 'q1OMOTZNtqpS50TIQtu4';
-  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_64`, {
+  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
     method: 'POST', signal: AbortSignal.timeout(20000),
     headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({ text: String(text || '').slice(0, 2500), model_id: process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5',
       voice_settings: { speed: voiceSpeed() } }),
   });
-  if (!r.ok) throw new Error(`ElevenLabs said ${r.status}`);
-  return { audio: Buffer.from(await r.arrayBuffer()).toString('base64') };
+  if (!r.ok) { log(`voice: ElevenLabs said ${r.status}`); throw new Error(`ElevenLabs said ${r.status}`); }
+  const mp3 = Buffer.from(await r.arrayBuffer());
+  log(`voice: ${String(text || '').length} chars -> ${mp3.length} bytes`);
+  return { audio: mp3.toString('base64') };
 }
 
 const ROUTES = {
