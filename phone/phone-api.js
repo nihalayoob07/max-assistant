@@ -401,6 +401,35 @@ async function ack(said) {
   return { ack: line };
 }
 
+// Max's side of the small talk while main Max works on a call task: one flowing chat on one topic, not a list of
+// questions. The phone opens it (a varied, time-of-day question); history is the chat so far ([{ role, content }]).
+// Not ready: react and ask one follow-up on the same thing. ready: the task's answer is in, so just a short reaction,
+// and the phone adds "Anyway, here's what I've got:" and the answer.
+async function chatLine({ history = [], ready = false } = {}) {
+  // The task stays out of this on purpose: knowing it ("play lofi"), the model drifted into talking about music.
+  const now = new Date().toLocaleString('en-IN', { timeZone: TZ, weekday: 'long', hour: 'numeric', minute: '2-digit' });
+  const system = ready
+    ? `You are Max, ${OWNER || 'the owner'}'s friendly assistant, chatting casually with him on a phone call. It is ${now}. ` +
+      'Reply to what he just said in ONE short, warm sentence (under 12 words) that fits it exactly. It must not be a question. ' +
+      'Spoken words only: no emoji, no quotes, no dashes.'
+    : `You are Max, ${OWNER || 'the owner'}'s friendly assistant, chatting casually with him on a phone call. It is ${now}. ` +
+      'React to what he just said in a few words, then ask ONE natural follow-up about the same thing (why, what, how), like a friend. ' +
+      'Stay on that exact topic. Spoken words only: at most two short sentences, under 20 words, no lists, no emoji, no quotes, no dashes. ' +
+      'Style:\nMax: Had dinner yet?\nHim: no not yet\nMax: Oh, how come? Busy evening?\nHim: yeah working on a project\n' +
+      "Max: Nice, how's it coming along?";
+  const body = JSON.stringify({
+    model: 'nvidia/nemotron-3.5-lightning-30b-a3b', max_tokens: 50, temperature: 0.7,
+    chat_template_kwargs: { enable_thinking: false },
+    messages: [{ role: 'system', content: system },
+      ...history.slice(-8).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: String(m.content || '').slice(0, 300) }))],
+  });
+  const out = await sandbox(`curl -s -m 5 https://integrate.api.nvidia.com/v1/chat/completions -H 'Content-Type: application/json' -H "Authorization: Bearer $NVIDIA_INFERENCE_API_KEY" -d @-`, body, 8000);
+  const line = String(JSON.parse(out)?.choices?.[0]?.message?.content || '').replace(/^max:\s*/i, '').replace(/["*_#`]/g, '')
+    .replace(/\s*[—–]\s*/g, ', ').replace(/\s+/g, ' ').trim();
+  if (!line || line.length > 200 || (ready && line.includes('?'))) throw new Error('no usable line');   // the phone has its own then
+  return { line };
+}
+
 async function talk(id, said, opening) {
   if (!talks.has(id)) talks.set(id, [{ role: 'assistant', content: opening }]);
   const m = talks.get(id);
@@ -548,6 +577,7 @@ const ROUTES = {
   'GET /call': async (_j, q) => { const { deal: _d, ...c } = await callInfo(callId(q.get('id'))); return { ...c, pronounce: PRONOUNCE }; },
   'POST /call/answer': (j) => answer(callId(j.id), String(j.text || '').slice(0, 500)),
   'POST /call/ack': (j) => ack(j.text),
+  'POST /call/chat': (j) => chatLine({ history: Array.isArray(j.history) ? j.history : [], ready: !!j.ready }),
   'POST /call/decide': (j) => decideCall(callId(j.id), j),
   'POST /ring': async (j) => { await ring(callId(j.id)); return { ok: true }; },
   'POST /tts': (j) => speech(j.text),
