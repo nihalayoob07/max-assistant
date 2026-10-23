@@ -246,9 +246,11 @@ class CallActivity : Activity() {
     private fun missed(code: Int) {
         if (busy || isFinishing) return
         line("·", "didn't catch that (code $code)")
-        if (holding) {   // no reply to the small talk: give the answer if it's in, else try another question
-            if (answerReady != null) { deliver("Okay, here's what I've got."); return }
-            say(smallQuestion() ?: "Still on it, one second.") { listen() }; return
+        if (stage == CHATTING) {   // no reply to the small talk yet: listen once more, then move on
+            if (++chatMisses < 2) { listen(); return }
+            if (answerReady != null) { deliver("Anyway, here's what I've got."); return }
+            stage = ACKING
+            say("No worries.") { afterLine(turn) }; return
         }
         if (talking && misses >= 1) { say("Okay, talk later. Bye.") { hangUp() }; return }
         if (++misses > 2) { status.text = "Tap Talk, or use the buttons"; return }
@@ -261,7 +263,7 @@ class CallActivity : Activity() {
     private fun heard(text: String) {
         misses = 0
         line("You", text)
-        if (holding) { chatBack(text); return }   // small talk while main Max works on the last question
+        if (stage == CHATTING) { chatBack(text); return }   // their reply to the small talk while main Max works
         val p = pending
         if (p != null) {
             val numbers = text.any { it.isDigit() }
@@ -277,41 +279,68 @@ class CallActivity : Activity() {
         // a person would: a line that shows it understood (written by the fast model, /call/ack), then small talk that
         // it listens to and reacts to, and the answer once it's in and the owner has finished speaking.
         val t = ++turn
-        holding = false
+        stage = WAITING
         answerReady = null
+        chatted = false
         var ackLine: String? = null
         thread {
             ackLine = runCatching { JSONObject(Api.call(this, "POST", "/call/ack", JSONObject().put("text", text).toString(), 3_000)).optString("ack") }
                 .getOrNull()?.takeIf { it.isNotBlank() }
         }
-        val hold = Runnable {
+        holdOn = Runnable {
             if (t != turn || answerReady != null) return@Runnable
-            holding = true
-            say(listOfNotNull(ackLine ?: fallbackAck(text), smallQuestion()).joinToString(" ")) { listen() }
+            stage = ACKING
+            say(ackLine ?: fallbackAck(text)) { afterLine(t) }
         }
-        handler.postDelayed(hold, 1_500)
+        handler.postDelayed(holdOn, 1_500)
         thread {
             val r = runCatching { JSONObject(Api.call(this, "POST", "/call/answer", JSONObject().put("id", id).put("text", text).toString(), 240_000)) }
             runOnUiThread {
                 if (t != turn) return@runOnUiThread   // dropped ("never mind") or replaced by a newer question
-                handler.removeCallbacks(hold)
+                handler.removeCallbacks(holdOn)
+                handler.removeCallbacks(askSmall)
                 answerReady = r
-                if (!holding) deliver("")   // otherwise it comes after they answer the small talk (chatBack / missed)
+                // Waiting or in a pause: answer now. Mid-line: after it (afterLine). After a question: after their reply.
+                if (stage == WAITING || stage == PAUSE) deliver(if (chatted) "Okay, here's what I've got." else "")
             }
         }
     }
 
     // ---------- holding the call while main Max works ----------
+    // One line at a time, like a person: an acknowledgement, a pause, then (if the answer still isn't in) one small-talk
+    // question; Max always waits for the reply, reacts, then either answers or pauses again.
+    private val WAITING = 0; private val ACKING = 1; private val PAUSE = 2; private val CHATTING = 3
+    private var stage = WAITING
     private var turn = 0                                 // bumped by each question; an answer for an old one is dropped
-    private var holding = false                          // Max is making small talk while it waits
     private var answerReady: Result<JSONObject>? = null  // the answer, once it's in
+    private var chatted = false                          // there was small talk this turn, so the answer gets a bridge
+    private var chatMisses = 0
     private val askedSmall = mutableListOf<String>()     // small-talk questions already asked on this call
+    private var lastSmall = ""                           // the one just asked, so the reaction fits it
+    private var holdOn = Runnable {}
+    private var askSmall = Runnable {}
 
-    /** The answer, led by a short bridge from the small talk ("Nice, glad to hear it. Okay, got it."). */
+    /** A hold line (acknowledgement or reaction) finished: answer if it's in, else pause, then ask something small. */
+    private fun afterLine(t: Int) {
+        if (t != turn) return
+        if (answerReady != null) { deliver(if (chatted) "Anyway, here's what I've got." else ""); return }
+        stage = PAUSE
+        askSmall = Runnable {
+            if (t != turn || answerReady != null || stage != PAUSE) return@Runnable
+            val q = smallQuestion() ?: return@Runnable   // out of questions: just wait quietly for the answer
+            stage = CHATTING
+            chatted = true
+            chatMisses = 0
+            say(q) { listen() }
+        }
+        handler.postDelayed(askSmall, 2_500)
+    }
+
+    /** The answer, led by a short bridge from the small talk ("Nice, glad to hear it. Anyway, here's what I've got."). */
     private fun deliver(lead: String) {
         val r = answerReady ?: return
         answerReady = null
-        holding = false
+        stage = WAITING
         r.onSuccess { j ->
             pending = j.optJSONObject("decision")
             say(listOf(lead, j.optString("say")).filter { it.isNotBlank() }.joinToString(" ")) { listen() }
@@ -323,21 +352,29 @@ class CallActivity : Activity() {
         val t = " ${said.lowercase(Locale.US)} "
         fun has(vararg w: String) = w.any { t.contains(" $it") }
         if (has("never mind", "nevermind", "cancel", "forget it", "forget that", "drop it")) {
-            turn++; holding = false; answerReady = null
+            turn++; stage = WAITING; answerReady = null
             say("Okay, dropping that. Anything else?") { listen() }; return
         }
         if (has("bye", "that's all", "gotta go", "got to go")) { say("Okay. Bye.") { hangUp() }; return }
-        val reaction = when {
-            has("bad", "tired", "rough", "stress", "busy", "hectic", "long day", "not great", "not good", "meh", "sick", "exhausted", "sleepy", "terrible") ->
-                listOf("Ah, sounds like a long one.", "Oof, hang in there.", "Sorry to hear that. Hopefully this helps.").random()
-            has("good", "great", "nice", "fine", "awesome", "amazing", "chill", "relaxed", "productive", "well", "yes", "yeah", "yep", "done", "had") ->
-                listOf("Nice, glad to hear it.", "Love that.", "Good stuff.").random()
-            has("no", "not yet", "nope", "nah", "haven't") -> listOf("Ah, okay. Don't forget to eat something.", "Fair enough.").random()
-            else -> listOf("Ha, fair enough.", "Makes sense.", "Got it.").random()
+        val bad = has("bad", "tired", "rough", "stress", "hectic", "long day", "not great", "not good", "meh", "sick", "exhausted", "sleepy",
+            "terrible", "awful", "not really", "barely")
+        val good = !bad && has("good", "great", "nice", "fine", "awesome", "amazing", "chill", "relaxed", "productive", "well", "yes", "yeah",
+            "yep", "done", "had", "sure", "busy", "fun", "excited")
+        val no = !bad && !good && has("no", "not yet", "nope", "nah", "haven't", "nothing")
+        // A reaction to what was asked, so it sounds like listening, not a canned line.
+        val (yes, nope, meh) = when (lastSmall) {
+            "Had breakfast yet?", "Had lunch yet?", "Had dinner yet?" -> Triple("Good, can't run on empty.", "Don't skip it, alright?", "Fair enough.")
+            "How did you sleep?" -> Triple("Nice, a good night's sleep makes everything easier.", "Ah, rough night. Go easy today.", "Got it.")
+            "Busy at the shop today?" -> Triple("Busy is good for business.", "A quiet one, then. Not bad either.", "Makes sense.")
+            "Got anything fun planned for the weekend?" -> Triple("Nice, sounds fun.", "A lazy weekend sounds good too.", "Ha, fair enough.")
+            "Getting any rest today?" -> Triple("Good, you need it.", "Try to grab a break if you can.", "Fair.")
+            "Any good news today?" -> Triple("Love that.", "It'll come.", "Ha, fair enough.")
+            else -> Triple("Nice, glad to hear it.", "Ah, okay.", "Ha, fair enough.")
         }
-        if (answerReady != null) { deliver("$reaction Okay, here's what I've got."); return }
-        val next = smallQuestion()
-        say(if (next != null) "$reaction $next" else "$reaction Give me one more second.") { listen() }
+        val reaction = when { bad -> listOf("Oof, sounds like a long one.", "Sorry to hear that.", "Ah, hang in there.").random(); good -> yes; no -> nope; else -> meh }
+        if (answerReady != null) { deliver("$reaction Anyway, here's what I've got."); return }
+        stage = ACKING   // speaking the reaction; afterLine then answers or pauses before anything else
+        say(reaction) { afterLine(turn) }
     }
 
     /** Small talk that suits the time of day, never the same question twice on a call. */
@@ -349,6 +386,7 @@ class CallActivity : Activity() {
             "What have you been up to?", "Any good news today?").shuffled()
         val q = (listOfNotNull(day, meal) + rest).firstOrNull { it !in askedSmall } ?: return null
         askedSmall += q
+        lastSmall = q
         return q
     }
 
