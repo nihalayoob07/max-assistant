@@ -27,4 +27,18 @@ assert.strictEqual(answer(intent('what do i have tomorrow'), data), 'Tomorrow yo
 assert.strictEqual(answer(intent('any follow ups'), data), 'Follow-ups due with Ravi (printvault).');
 assert.strictEqual(answer(intent('any leads'), data), '2 open leads, 1 deal waiting for your decision.');
 assert(answer(intent('brief me'), data, { owner: 'Nihal', now: new Date('2026-10-23T20:00') }).startsWith("Good evening Nihal, it's Max. Here's your day."));
+// Small talk: answered instantly, but "okay" after Max's question is an answer for Max, and requests still go to Max.
+const { smallTalk, askedQuestion } = require('./quick');
+const o = { tz: 'Asia/Kolkata', now: new Date('2026-10-23T15:30:00Z') };   // 9 pm in India
+for (const t of ['hello', 'Hello Max, how are you?', 'hey max how are you doing today', 'are you there', 'can you hear me', 'who made you',
+  'are you an ai', 'tell me a joke', 'thanks so much', 'bye', 'um hello max', "i'm good", 'okay']) assert(smallTalk(t, 'Nihal', o), t);
+assert.strictEqual(smallTalk('what time is it', 'Nihal', o), "It's 9:00 pm.");
+assert.strictEqual(smallTalk('whats the date', 'Nihal', o), "It's Friday, 23 October.");
+assert.strictEqual(smallTalk('who made you', 'Nihal', o), 'You built me, Nihal. I run privately on your own server, on NVIDIA Nemotron.');
+assert.strictEqual(smallTalk('okay', 'Nihal', { ...o, asked: true }), null);
+assert.strictEqual(smallTalk('hello', 'Nihal', { ...o, asked: true }) !== null, true);
+for (const t of ['add milk to my list', "how's business this week", 'okay add milk to my list', 'hello can you open youtube'])
+  assert.strictEqual(smallTalk(t, 'Nihal', o), null, t);
+assert.strictEqual(askedQuestion([{ role: 'assistant', content: 'Should I send it?' }, { role: 'user', content: 'okay' }]), true);
+assert.strictEqual(askedQuestion([{ role: 'assistant', content: 'Sent.' }]), false);
 console.log('quick ok');

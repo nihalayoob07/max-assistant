@@ -195,7 +195,8 @@ echo ok`);
 
 // Greetings and small talk ("hi", "thanks max") get an instant answer; see quick.js.
 function quickReply(messages) {
-  return instant.smallTalk(messages.filter((x) => x.role === 'user').pop()?.content, owner());
+  return instant.smallTalk(messages.filter((x) => x.role === 'user').pop()?.content, owner(),
+    { tz: CFG.TIMEZONE, asked: instant.askedQuestion(messages) });   // after Max's question, "okay" is an answer for Max
 }
 
 // YouTube commands ("pause", "next video", "search mr beast", "play the third video") run straight on the

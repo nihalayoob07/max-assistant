@@ -57,28 +57,74 @@ const INTENTS = [
   ['leads', /^((any|how many) (new )?(leads|deals|enquiries)( today)?|(any )?deals? waiting( for me)?|(what|anything) needs (me|my decision))$/],
 ];
 const normal = (text) => String(text || '').toLowerCase().replace(/^🎙\s*/u, '').replace(/[’‘]/g, "'").replace(/[^\w\s']/g, ' ')
-  .replace(/\s+/g, ' ').trim().replace(/^((hey|ok|okay|hi) )?max\b ?/, '').replace(/ (max|please)$/, '').replace(/^please /, '').trim();
-// Greetings and small talk. Only exact short phrases match, so anything with a real request in it still goes to Max.
+  .replace(/\s+/g, ' ').trim().replace(/^((um|uh|so|oh) )+/, '').replace(/^((hey|ok|okay|hi|hello|yo) )?max\b ?/, '').replace(/ (max|please)$/, '').replace(/^please /, '').trim();
+// Greetings and small talk. Only whole short phrases match, so anything with a real request in it still goes to Max.
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 let named = (s) => s;   // set per call by smallTalk(): puts the owner's first name in, or drops it
-const SMALL_TALK = [
-  [/^(hi|hello|hey|hiya|yo|sup|hey there|hello there|wassup|whats up|what's up)$/, () => {
-    const h = new Date().getHours();
-    return named(pick([`${h < 12 ? 'Morning' : h < 17 ? 'Hey' : 'Evening'}, {name}. What do you need?`, 'Hey {name}. What can I do for you?', "Hey. I'm here, what's up?"]));
-  }],
-  [/^good (morning|afternoon|evening)$/, (m) => named(`Good ${m[1]}, {name}. What's first?`)],
-  [/^(how are you|how are you doing|hows it going|how's it going|you good|how r u)$/, () => pick(['All good and ready to go. What do you need?', "Running smooth. What's up?"])],
-  [/^(thanks|thank you|thx|ty|cheers|thanks a lot|thank you so much|nice one)$/, () => pick(['Anytime.', 'Happy to help.', 'No problem.'])],
-  [/^(ok|okay|cool|nice|great|got it|alright|perfect|awesome|sounds good)$/, () => pick(['Sure.', 'Cool.', 'Got it.'])],
-  [/^(bye|goodbye|see you|see ya|later|cya)$/, () => named(pick(['Later, {name}.', 'See you.']))],
-  [/^(good night|gn|night)$/, () => named('Good night, {name}.')],
-  [/^(who are you|what are you)$/, () => "I'm Max, your assistant. I run your businesses' inboxes and leads, keep your calendar, and control your laptop and server."],
-  [/^(what can you do|help)$/, () => 'I can reply to clients, track leads, manage your calendar, research things, and control your laptop and server. Just ask.'],
+let clock = { tz: undefined, now: () => new Date() };   // set per call: the owner's time zone
+const hour = () => Number(clock.now().toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: clock.tz })) % 24;
+const HELLO = 'hi|hello|hey|hiya|heya|yo|sup|howdy|hey there|hello there|hi there|wassup|whats up|what\'s up|namaste|hola';
+const HOW = 'how are you|how are you doing|how are you today|how are you doing today|how you doing|how r u|hru|how\'s it going|hows it going|' +
+  'how are things|how have you been|how\'s your day|hows your day|how\'s your day going|how was your day|how\'s everything|you good|you alright|all good|what\'s good|whats good';
+const fine = () => pick(['All good and ready to go. What do you need?', "Running smooth. What's up?", 'Doing well. What can I do for you?']);
+const JOKES = [
+  "I told the printer a joke. It didn't get it, but it made three copies just in case.",
+  'Why did the website go to therapy? Too many unresolved issues.',
+  "I'd tell you a UDP joke, but you might not get it.",
+  'My calendar and I have a lot in common. We both have no free time.',
 ];
-function smallTalk(text, owner = '') {
-  named = (s) => (owner ? s.replace('{name}', owner) : s.replace(/,? ?{name}/, ''));
+// [pattern, reply, kind]. kind 'ack' means it could be an answer to a question Max just asked, so it's skipped then.
+const SMALL_TALK = [
+  [new RegExp(`^(${HELLO})$`), () => named(pick([`${hour() < 12 ? 'Morning' : hour() < 17 ? 'Hey' : 'Evening'}, {name}. What do you need?`,
+    'Hey {name}. What can I do for you?', "Hey. I'm here, what's up?"]))],
+  [new RegExp(`^(${HELLO}) (${HOW})$`), () => named(pick(['Hey {name}, all good here. What do you need?', "Hey {name}. I'm good, what's up?"]))],
+  [/^(assalamualaikum|assalamu alaikum|salaam|salam|as salaam alaikum)$/, () => named('Walaikum assalam, {name}. What do you need?')],
+  [/^good (morning|afternoon|evening)$/, (m) => named(`Good ${m[1]}, {name}. What's first?`)],
+  [new RegExp(`^(${HOW})$`), fine],
+  [/^(what are you doing|what're you doing|whatcha doing|wyd|what are you up to|what's up with you|whats up with you)$/,
+    () => pick(['Keeping an eye on your inbox and calendar. What do you need?', 'Just watching the inbox. What can I do for you?'])],
+  [/^(are you there|you there|can you hear me|hello hello|hello are you there|testing|test|testing testing|mic check|do you hear me)$/,
+    () => pick(["I'm here.", 'Loud and clear.', "Yep, I'm here. Go ahead."])],
+  [/^(i'm good|im good|i'm fine|im fine|i'm great|im great|doing well|doing good|not bad|pretty good|good|great|fine)$/, () => 'Good to hear. What can I do for you?', 'ack'],
+  [/^(thanks|thank you|thx|ty|tysm|thank u|cheers|thanks a lot|thank you so much|thanks so much|nice one|appreciate it|much appreciated|thanks man|thanks bro|thanks buddy|great thanks|ok thanks|okay thanks|thanks again)$/,
+    () => pick(['Anytime.', 'Happy to help.', 'No problem.'])],
+  [/^(ok|okay|k|kk|okie|cool|nice|great|got it|alright|all right|perfect|awesome|sounds good|sure|fine|noted|understood|makes sense|fair enough|right|oh ok|oh okay|ah ok|i see)$/,
+    () => pick(['Sure.', 'Cool.', 'Got it.']), 'ack'],
+  [/^(good job|well done|nice work|great job|great work|good work|you're the best|youre the best|you're awesome|youre awesome|you're smart|smart|love you|i love you|good boy|legend|you rock)$/,
+    () => named(pick(['Thanks, {name}.', 'Appreciate it.', 'Glad it helped.']))],
+  [/^(sorry|my bad|never mind|nevermind|nvm|forget it|forget about it|no worries|nothing|it's nothing|its nothing|ignore that)$/, () => pick(['No worries.', 'All good.']), 'ack'],
+  [/^(i'm back|im back|back|i am back)$/, () => named("Welcome back, {name}. What's next?")],
+  [/^(lol|haha|hahaha|lmao|hehe|funny)$/, () => 'Ha.'],
+  [/^(bye|goodbye|bye bye|bye max|see you|see ya|see you later|later|cya|ttyl|talk later|talk to you later|catch you later|gotta go|got to go|i'm off|im off)$/,
+    () => named(pick(['Later, {name}.', 'See you.', 'Talk soon.']))],
+  [/^(good night|goodnight|gn|night|nighty night|sleep well)$/, () => named('Good night, {name}.')],
+  [/^(who are you|what are you|introduce yourself|tell me about yourself)$/,
+    () => "I'm Max, your assistant. I run your businesses' inboxes and leads, keep your calendar, and control your laptop and server."],
+  [/^(what's your name|whats your name|what is your name|your name)$/, () => "I'm Max."],
+  [/^(who made you|who built you|who created you|who designed you|who's your creator|whos your creator|who owns you)$/,
+    () => named('You built me, {name}. I run privately on your own server, on NVIDIA Nemotron.')],
+  [/^(are you an ai|are you a bot|are you a robot|are you real|are you human|are you a person)$/,
+    () => "I'm an AI: Max, running privately on your own server."],
+  [/^(what can you do|help|what do you do|how can you help|how can you help me|what are you good at)$/,
+    () => 'I can reply to clients, track leads, manage your calendar, research things, and control your laptop and server. Just ask.'],
+  [/^(tell me a joke|say something funny|make me laugh|joke|another joke|tell me another joke)$/, () => pick(JOKES)],
+  [/^(what time is it|what's the time|whats the time|time|the time|current time|time now|what time is it now)$/,
+    () => `It's ${clock.now().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: clock.tz })}.`],
+  [/^(what's the date|whats the date|what is the date|what's today's date|whats today's date|todays date|today's date|what day is it|what day is it today|what's the day today|whats the day today)$/,
+    () => `It's ${clock.now().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: clock.tz })}.`],
+];
+// Max's last line in a conversation was a question: then "okay", "fine", "nothing" are answers to it.
+const askedQuestion = (messages) => /\?\s*$/.test(String(messages.filter((m) => m.role === 'assistant').pop()?.content || ''));
+// asked: Max's last line was a question, so "okay", "fine", "nothing" are answers to it and go to Max.
+function smallTalk(text, owner = '', { tz, now, asked = false } = {}) {
+  named = (s) => (owner ? s.replaceAll('{name}', owner) : s.replace(/,? ?\{name\}('s)?/g, (_m, s2) => (s2 ? 'your' : '')));
+  clock = { tz, now: now ? () => now : () => new Date() };
   const t = normal(text) || 'hi';
-  for (const [re, say] of SMALL_TALK) { const hit = re.exec(t); if (hit) return say(hit); }
+  for (const [re, say, kind] of SMALL_TALK) {
+    if (kind === 'ack' && asked) continue;
+    const hit = re.exec(t);
+    if (hit) return say(hit);
+  }
   return null;
 }
 
@@ -120,4 +166,4 @@ function answer(want, data, { owner = '', orders = [], now = new Date() } = {}) 
   return null;
 }
 
-module.exports = { smallTalk, intent, answer, brief, ORDERS, parseOrders, hm12, plural, list, person };
+module.exports = { smallTalk, askedQuestion, intent, answer, brief, ORDERS, parseOrders, hm12, plural, list, person };

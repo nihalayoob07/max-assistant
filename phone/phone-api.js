@@ -22,7 +22,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 // Instant answers, the morning brief and its helpers, shared with the desktop app.
-const { smallTalk, intent, answer: quickAnswer, brief, ORDERS, parseOrders, hm12, person } = require(path.join(__dirname, '..', 'app', 'quick.js'));
+const { smallTalk, askedQuestion, intent, answer: quickAnswer, brief, ORDERS, parseOrders, hm12, person } = require(path.join(__dirname, '..', 'app', 'quick.js'));
 
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const [HOST, PORT] = arg('listen', '0.0.0.0:18660').split(':');
@@ -158,8 +158,8 @@ function deskMode(set) {
 /* ---------- Chat with main Max (its API on the host, port 8642) ---------- */
 let maxToken = '';
 // Small talk and the common questions (list, calendar, follow-ups, leads, brief) answered straight away, or null.
-async function instant(text) {
-  const hello = smallTalk(text, OWNER);
+async function instant(text, asked = false) {   // asked: Max's last line was a question, so "okay" answers it
+  const hello = smallTalk(text, OWNER, { tz: TZ, asked });
   if (hello) return hello;
   const want = intent(text);
   if (!want) return null;
@@ -168,7 +168,7 @@ async function instant(text) {
 }
 
 async function chat(messages) {
-  const quick = await instant(messages.filter((m) => m.role === 'user').pop()?.content);
+  const quick = await instant(messages.filter((m) => m.role === 'user').pop()?.content, askedQuestion(messages));
   if (quick) return quick;
   if (!maxToken) {
     maxToken = await new Promise((resolve) => execFile('/bin/sh', ['-c', 'export PATH=$HOME/.local/bin:$PATH; nemohermes max gateway-token --quiet 2>/dev/null | tail -1'],
@@ -383,7 +383,7 @@ async function talk(id, said, opening) {
   if (!talks.has(id)) talks.set(id, [{ role: 'assistant', content: opening }]);
   const m = talks.get(id);
   m.push({ role: 'user', content: `(On a phone call with you, so answer in a few short spoken sentences, no lists or markdown.) ${said}` });
-  const reply = await instant(said) || await chat(m);   // what was said, before the call note, so "hello" still matches
+  const reply = await instant(said, askedQuestion(m)) || await chat(m);   // what was said, before the call note, so "hello" still matches
   m.push({ role: 'assistant', content: reply });
   if (talks.size > 20) talks.delete(talks.keys().next().value);
   return reply.replace(/[*_#`>|]/g, '').replace(/\n+/g, ' ');
