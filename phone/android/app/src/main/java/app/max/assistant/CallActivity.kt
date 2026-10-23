@@ -6,8 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
-import android.animation.ObjectAnimator
-import android.animation.ValueAnimator
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.media.AudioAttributes
@@ -18,6 +16,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -30,9 +29,9 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
-import android.view.animation.LinearInterpolator
 import android.widget.Button
-import android.widget.FrameLayout
+import android.widget.Chronometer
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -66,7 +65,6 @@ class CallActivity : Activity() {
     private lateinit var ringRow: LinearLayout
     private lateinit var dealRow: LinearLayout
     private lateinit var callRow: LinearLayout
-    private lateinit var speakerBtn: Button
 
     private var id = ""
     private var deal: JSONObject? = null   // what this call is about (server: GET /call)
@@ -121,7 +119,7 @@ class CallActivity : Activity() {
         CallService.answer(this)
         ringRow.visibility = View.GONE
         callRow.visibility = View.VISIBLE
-        shrinkCore()
+        startTimer()
         status.text = "Connecting…"
         route()
         tts = TextToSpeech(this) { ok ->
@@ -472,34 +470,36 @@ class CallActivity : Activity() {
     }
 
     private fun build() {
-        // Centred like a phone call: who's calling, Max's core in the middle, then the conversation and the buttons.
+        // Laid out like a phone's own call screen: who's calling and why at the top, the call timer once answered,
+        // the conversation in the middle, and round call buttons at the bottom.
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(30), dp(22), dp(22)) }
         val center = LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL }
-        col.addView(text(if (id.startsWith("me:")) "Outgoing call" else "Incoming call", 14f, muted, Typeface.DEFAULT), center)
-        core = core()
-        col.addView(core, LinearLayout.LayoutParams(dp(200), dp(200)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(28); bottomMargin = dp(20) })
-        col.addView(text("MAX", 40f, blue, condensed).apply { letterSpacing = 0.35f }, center)
-        title = text(CallService.label(id), 20f, ink, condensed).apply { gravity = Gravity.CENTER }
+        col.addView(text("Max", 40f, ink, Typeface.create("sans-serif-light", Typeface.NORMAL)),
+            LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(56) })
+        title = text(CallService.label(id), 17f, muted, Typeface.DEFAULT).apply { gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) }
         col.addView(title, center)
-        prices = text("", 13f, blue, mono).apply { gravity = Gravity.CENTER; setPadding(0, dp(8), 0, 0) }
+        timer = Chronometer(this).apply { setTextColor(muted); setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f); visibility = View.GONE; setPadding(0, dp(6), 0, 0) }
+        col.addView(timer, center)
+        prices = text("", 13f, blue, mono).apply { gravity = Gravity.CENTER; setPadding(0, dp(10), 0, 0) }
         col.addView(prices, center)
-        status = text("Calling you…", 15f, blue, Typeface.DEFAULT_BOLD).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(10)) }
+        status = text(if (id.startsWith("me:")) "Calling…" else "Incoming call…", 15f, blue, Typeface.DEFAULT).apply { gravity = Gravity.CENTER; setPadding(0, dp(10), 0, 0) }
         col.addView(status, center)
         log = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll = ScrollView(this).apply { addView(log); isFillViewport = true }
-        col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(18) })
 
         dealRow = row().apply { visibility = View.GONE }
         col.addView(dealRow)
-        callRow = row().apply { visibility = View.GONE }
-        speakerBtn = button("Earpiece", blue, false) { toggleSpeaker() }
-        callRow.addView(speakerBtn, weight())
-        callRow.addView(button("Talk", blue, false) { misses = 0; if (!busy) { stopVoice(); pending = null; listen() } }, weight())
-        callRow.addView(button("Hang up", grey, true) { hangUp() }, weight())
+        callRow = roundRow().apply { visibility = View.GONE }
+        val (speakerKey, speakerText) = roundButton(android.R.drawable.ic_lock_silent_mode_off, "Earpiece", grey, ink) { toggleSpeaker() }
+        speakerLabel = speakerText
+        callRow.addView(speakerKey)
+        callRow.addView(roundButton(android.R.drawable.ic_btn_speak_now, "Talk", grey, ink) { misses = 0; if (!busy) { stopVoice(); pending = null; listen() } }.first)
+        callRow.addView(roundButton(android.R.drawable.ic_menu_call, "Hang up", grey, ink, 135f) { hangUp() }.first)
         col.addView(callRow)
-        ringRow = row()
-        ringRow.addView(button("Decline", grey, true) { hangUp() }, weight())
-        ringRow.addView(button("Answer", rose, true) { answer() }, weight())
+        ringRow = roundRow()
+        ringRow.addView(roundButton(android.R.drawable.ic_menu_call, "Decline", grey, ink, 135f) { hangUp() }.first)
+        ringRow.addView(roundButton(android.R.drawable.ic_menu_call, "Answer", rose, bg) { answer() }.first)
         col.addView(ringRow)
 
         col.setBackgroundColor(bg)
@@ -516,42 +516,45 @@ class CallActivity : Activity() {
         setContentView(col)
     }
 
-    /** Max's core, as in the apps: a faint outer ring, a slowly turning dashed ring, and a glowing centre that breathes.
-     *  Two simple animations on their own layers, so it stays smooth on a slow phone. */
-    private lateinit var core: FrameLayout
-    private fun core(): FrameLayout {
-        fun ring(inset: Int, width: Float, color: Int, dash: Float = 0f, gap: Float = 0f) = View(this).apply {
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setStroke(dp(1).toFloat().times(width).toInt().coerceAtLeast(1), color, dash, gap) }
-            layoutParams = FrameLayout.LayoutParams(-1, -1).apply { setMargins(inset, inset, inset, inset) }
-        }
-        val faint = Color.argb(70, Color.red(blue), Color.green(blue), Color.blue(blue))
-        val spin = ring(dp(14), 2.5f, blue, dp(10).toFloat(), dp(7).toFloat()).apply { setLayerType(View.LAYER_TYPE_HARDWARE, null) }
-        val glow = View(this).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL; gradientType = GradientDrawable.RADIAL_GRADIENT; gradientRadius = dp(46).toFloat()
-                colors = intArrayOf(Color.parseColor("#E8F6FC"), blue, Color.TRANSPARENT)
+    private lateinit var timer: Chronometer
+    private lateinit var speakerLabel: TextView
+    /** The call timer, like a phone's, from the moment the call is answered. */
+    private fun startTimer() {
+        timer.base = SystemClock.elapsedRealtime()
+        timer.visibility = View.VISIBLE
+        timer.start()
+    }
+
+    /** A round call button with its label underneath, as on a phone's dialer. */
+    private fun roundButton(icon: Int, label: String, fill: Int, tint: Int, turn: Float = 0f, onClick: () -> Unit): Pair<LinearLayout, TextView> {
+        val key = ImageButton(this).apply {
+            setImageResource(icon)
+            setColorFilter(tint)
+            rotation = turn
+            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            background = StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_pressed), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(fill); alpha = 150 })
+                addState(intArrayOf(), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(fill) })
             }
-            layoutParams = FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(54), dp(54), dp(54), dp(54)) }
-            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            contentDescription = label
+            setOnClickListener { onClick() }
         }
-        ObjectAnimator.ofFloat(spin, "rotation", 0f, 360f).apply { duration = 24_000; repeatCount = ValueAnimator.INFINITE; interpolator = LinearInterpolator(); start() }
-        for (p in listOf("scaleX", "scaleY")) ObjectAnimator.ofFloat(glow, p, 1f, 0.86f).apply {
-            duration = 1_600; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; start()
+        val name = text(label, 13f, muted, Typeface.DEFAULT).apply { gravity = Gravity.CENTER; setPadding(0, dp(8), 0, 0) }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
+            addView(key, LinearLayout.LayoutParams(dp(68), dp(68)))
+            addView(name)
         }
-        return FrameLayout(this).apply {
-            addView(ring(0, 1f, faint)); addView(spin); addView(ring(dp(40), 1f, faint)); addView(glow)
-        }
+        box.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+        return box to name
     }
-    /** Once the call is answered, the core gets smaller so the conversation has room. */
-    private fun shrinkCore() {
-        core.layoutParams = (core.layoutParams as LinearLayout.LayoutParams).apply { width = dp(120); height = dp(120); topMargin = dp(14); bottomMargin = dp(10) }
-        core.requestLayout()
-    }
+    private fun roundRow() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, dp(18), 0, dp(10)) }
 
     private fun toggleSpeaker() {
         speaker = !speaker
         route()
-        speakerBtn.text = if (speaker) "Earpiece" else "Speaker"
+        speakerLabel.text = if (speaker) "Earpiece" else "Speaker"
     }
 
     private fun line(who: String, text: String) {
