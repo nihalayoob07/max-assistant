@@ -388,9 +388,10 @@ async function ack(said) {
     chat_template_kwargs: { enable_thinking: false },   // it's a reasoning model: thinking alone would use up the 40 tokens
     messages: [
       { role: 'system', content: `You are Max, ${OWNER || 'the owner'}'s assistant, on a phone call with him. He just asked you something and you are working on it. ` +
-        'Say ONE short, casual spoken sentence (under 12 words) that shows you understood what he asked, in your own words, without answering it ' +
-        'and without asking anything. No lists, no emoji, no quotes. Examples: "Weekend offer, let me think about what would work." / ' +
-        '"Ah, the Ravi deal. Let me pull it up." / "Opening YouTube on your laptop now."' },
+        'Say ONE short, casual spoken sentence (under 12 words) that shows you understood what he asked, in your own words. ' +
+        'Say what you are about to do, never that it is done, and never give the answer or any facts. Do not ask anything. ' +
+        'No lists, no emoji, no quotes. Examples: "Weekend offer, let me think about what would work." / ' +
+        '"Ah, the Ravi deal. Let me pull it up." / "Let me get YouTube going on your laptop." / "Okay, let me add that reminder."' },
       { role: 'user', content: String(said || '').slice(0, 400) },
     ],
   });
