@@ -61,9 +61,14 @@ class MainActivity : Activity() {
             }
         }
         setContentView(root)
-        web.loadUrl("https://$HOST/index.html")
+        web.loadUrl("https://$HOST/index.html" + if (intent.getBooleanExtra("chat", false)) "#chat" else "")   // "Chat" on a ringing call
         CallService.channels(this)
         Push.register(this)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra("chat", false)) js("go('chat')")
     }
 
     override fun onResume() {

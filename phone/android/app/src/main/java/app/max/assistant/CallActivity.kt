@@ -4,6 +4,10 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.animation.Animator
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -29,7 +33,13 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
+import android.transition.AutoTransition
+import android.transition.TransitionManager
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.Chronometer
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -45,12 +55,17 @@ import kotlin.concurrent.thread
  *  understood, and only acts on a "yes". The buttons do the same without talking. */
 class CallActivity : Activity() {
 
-    // The dashboard's palette: jet black, cerulean for structure, rose for the action. Ending or declining is a calm
-    // grey button, so the screen never shows two hot colours side by side.
+    // The dashboard's palette (jet black, cerulean, rose), with a phone's own green Answer and red Decline / Hang up.
     private val bg = Color.parseColor("#0A0A0A")
     private val blue = Color.parseColor("#4FB8E0")
     private val rose = Color.parseColor("#FF2D95")
     private val grey = Color.parseColor("#2A2C30")
+    private val chip = Color.parseColor("#26262E")   // quiet round buttons
+    private val card = Color.parseColor("#16161C")   // preview lines and Max's bubbles
+    private val green = Color.parseColor("#30A46C")  // answer
+    private val red = Color.parseColor("#E5484D")    // decline, hang up
+    private val pink = Color.parseColor("#FF8CC4")
+    private val light = Typeface.create("sans-serif-light", Typeface.NORMAL)
     private val ink = Color.parseColor("#EDEDEE")
     private val muted = Color.parseColor("#8B9098")
     private val condensed = Typeface.create("sans-serif-condensed", Typeface.BOLD)
@@ -59,7 +74,6 @@ class CallActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var status: TextView
     private lateinit var title: TextView
-    private lateinit var prices: TextView
     private lateinit var log: LinearLayout
     private lateinit var scroll: ScrollView
     private lateinit var ringRow: LinearLayout
@@ -117,9 +131,7 @@ class CallActivity : Activity() {
     private fun answer() {
         answered = true
         CallService.answer(this)
-        ringRow.visibility = View.GONE
-        callRow.visibility = View.VISIBLE
-        startTimer()
+        toCall()
         status.text = "Connecting…"
         route()
         tts = TextToSpeech(this) { ok ->
@@ -456,10 +468,32 @@ class CallActivity : Activity() {
     }
 
     // ---------- screen ----------
-    /** The call's title, details and answer buttons all come from the server (phone-api.js callInfo). */
+    // Ringing: Max's avatar with pulsing rings, who's calling and why, then a few lines on what the call is about
+    // (the server's "points"), with Decline / Chat / Answer. Answering slides the avatar into a header with the
+    // timer, and the conversation appears as chat bubbles above Speaker / Talk / Hang up.
+    private lateinit var root: LinearLayout
+    private lateinit var header: LinearLayout
+    private lateinit var avatar: FrameLayout
+    private lateinit var initial: TextView
+    private lateinit var who: LinearLayout
+    private lateinit var name: TextView
+    private lateinit var points: LinearLayout
+    private lateinit var topSpace: View
+    private val ringViews = mutableListOf<View>()
+    private val anims = mutableListOf<Animator>()
+
+    /** The call's title, details, preview lines and answer buttons all come from the server (phone-api.js callInfo). */
     private fun showCall(d: JSONObject) {
-        title.text = d.optString("title") + "\n" + d.optString("sub")
-        prices.text = d.optString("info").replace(" · ", "   ·   ")
+        title.text = listOf(d.optString("title"), d.optString("sub")).filter { it.isNotBlank() }.joinToString("\n")
+        points.removeAllViews()
+        val p = d.optJSONArray("points") ?: JSONArray()
+        for (i in 0 until minOf(p.length(), 3)) {
+            val (icon, s) = p.getJSONArray(i).let { it.optString(0) to it.optString(1) }
+            if (s.isBlank()) continue
+            val c = pointCard(icon, s)
+            points.addView(c, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+            rise(c, 150L + 150L * i)
+        }
         dealRow.removeAllViews()
         val buttons = d.optJSONArray("buttons") ?: return
         for (i in 0 until buttons.length()) {
@@ -470,50 +504,98 @@ class CallActivity : Activity() {
     }
 
     private fun build() {
-        // Laid out like a phone's own call screen: who's calling and why at the top, the call timer once answered,
-        // the conversation in the middle, and round call buttons at the bottom.
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(30), dp(22), dp(22)) }
-        val center = LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL }
-        col.addView(text("Max", 40f, ink, Typeface.create("sans-serif-light", Typeface.NORMAL)),
-            LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(56) })
-        title = text(CallService.label(id), 17f, muted, Typeface.DEFAULT).apply { gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) }
-        col.addView(title, center)
-        timer = Chronometer(this).apply { setTextColor(muted); setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f); visibility = View.GONE; setPadding(0, dp(6), 0, 0) }
-        col.addView(timer, center)
-        prices = text("", 13f, blue, mono).apply { gravity = Gravity.CENTER; setPadding(0, dp(10), 0, 0) }
-        col.addView(prices, center)
-        status = text(if (id.startsWith("me:")) "Calling…" else "Incoming call…", 15f, blue, Typeface.DEFAULT).apply { gravity = Gravity.CENTER; setPadding(0, dp(10), 0, 0) }
-        col.addView(status, center)
+        root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
+        header = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false }
+        avatar = FrameLayout(this).apply { clipChildren = false }
+        repeat(2) { i ->
+            val ring = View(this).apply { background = oval(Color.TRANSPARENT, blue); alpha = 0f }
+            avatar.addView(ring, FrameLayout.LayoutParams(-1, -1))
+            ringViews += ring
+            pulse(ring, i * 1200L)
+        }
+        initial = text("M", 44f, Color.parseColor("#8FD6F2"), light).apply { gravity = Gravity.CENTER; background = oval(Color.parseColor("#0F2530"), null) }
+        avatar.addView(initial, FrameLayout.LayoutParams(-1, -1))
+        header.addView(avatar, LinearLayout.LayoutParams(dp(104), dp(104)))
+        who = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        name = text("Max", 34f, ink, light).apply { gravity = Gravity.CENTER }
+        who.addView(name)
+        title = text(CallService.label(id), 14f, muted, Typeface.DEFAULT).apply { gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0); setLineSpacing(0f, 1.15f) }
+        who.addView(title)
+        timer = Chronometer(this).apply { setTextColor(blue); typeface = mono; setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f); visibility = View.GONE; setPadding(0, dp(2), 0, 0) }
+        who.addView(timer)
+        status = text(if (id.startsWith("me:")) "Calling…" else "Incoming call", 13f, blue, Typeface.DEFAULT).apply { gravity = Gravity.CENTER; setPadding(0, dp(6), 0, 0) }
+        who.addView(status)
+        header.addView(who, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(24) })
+        topSpace = View(this)   // while ringing, the caller sits a third of the way down, not crammed at the top
+        root.addView(topSpace, LinearLayout.LayoutParams(-1, 0, 0.5f))
+        root.addView(header, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+        rise(header, 0)
+
+        points = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(points, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(22) })
         log = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        scroll = ScrollView(this).apply { addView(log); isFillViewport = true }
-        col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(18) })
+        scroll = ScrollView(this).apply { addView(log); isFillViewport = true; isVerticalScrollBarEnabled = false }
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(12) })
 
         dealRow = row().apply { visibility = View.GONE }
-        col.addView(dealRow)
+        root.addView(dealRow)
         callRow = roundRow().apply { visibility = View.GONE }
-        val (speakerKey, speakerText) = roundButton(android.R.drawable.ic_lock_silent_mode_off, "Earpiece", grey, ink) { toggleSpeaker() }
+        val (speakerKey, speakerText) = roundButton(R.drawable.ic_volume, "Earpiece", chip, 60) { toggleSpeaker() }
         speakerLabel = speakerText
         callRow.addView(speakerKey)
-        callRow.addView(roundButton(android.R.drawable.ic_btn_speak_now, "Talk", grey, ink) { misses = 0; if (!busy) { stopVoice(); pending = null; listen() } }.first)
-        callRow.addView(roundButton(android.R.drawable.ic_menu_call, "Hang up", grey, ink, 135f) { hangUp() }.first)
-        col.addView(callRow)
+        callRow.addView(roundButton(R.drawable.ic_mic, "Talk", chip, 60) { misses = 0; if (!busy) { stopVoice(); pending = null; listen() } }.first)
+        callRow.addView(roundButton(R.drawable.ic_call_end, "Hang up", red, 60) { hangUp() }.first)
+        root.addView(callRow)
         ringRow = roundRow()
-        ringRow.addView(roundButton(android.R.drawable.ic_menu_call, "Decline", grey, ink, 135f) { hangUp() }.first)
-        ringRow.addView(roundButton(android.R.drawable.ic_menu_call, "Answer", rose, bg) { answer() }.first)
-        col.addView(ringRow)
+        ringRow.addView(roundButton(R.drawable.ic_call_end, "Decline", red, 66) { hangUp() }.first)
+        ringRow.addView(roundButton(R.drawable.ic_chat, "Chat", chip, 54) { openChat() }.first)
+        val (answerKey) = roundButton(R.drawable.ic_call, "Answer", green, 66) { answer() }
+        ringRow.addView(answerKey)
+        breathe(answerKey.getChildAt(0))
+        root.addView(ringRow)
 
-        col.setBackgroundColor(bg)
+        root.setBackgroundColor(bg)
         window.statusBarColor = bg
         window.navigationBarColor = bg
+        val pad = { l: Int, t: Int, r: Int, b: Int -> root.setPadding(dp(22) + l, dp(16) + t, dp(22) + r, dp(28) + b) }
+        pad(0, 0, 0, 0)
         if (Build.VERSION.SDK_INT >= 30) {
             window.setDecorFitsSystemWindows(false)
-            col.setOnApplyWindowInsetsListener { v, insets ->
+            root.setOnApplyWindowInsetsListener { _, insets ->
                 val i = insets.getInsets(WindowInsets.Type.systemBars())
-                v.setPadding(dp(22) + i.left, dp(30) + i.top, dp(22) + i.right, dp(22) + i.bottom)
+                pad(i.left, i.top, i.right, i.bottom)
                 WindowInsets.CONSUMED
             }
         }
-        setContentView(col)
+        setContentView(root)
+    }
+
+    /** Answered: the rings stop, the avatar slides up into a header with the timer, and the call buttons swap in. */
+    private fun toCall() {
+        TransitionManager.beginDelayedTransition(root, AutoTransition().setDuration(350))
+        anims.forEach { it.cancel() }
+        ringViews.forEach { it.visibility = View.GONE }
+        header.orientation = LinearLayout.HORIZONTAL
+        header.gravity = Gravity.CENTER_VERTICAL
+        (header.layoutParams as LinearLayout.LayoutParams).topMargin = dp(8)
+        avatar.layoutParams = LinearLayout.LayoutParams(dp(52), dp(52))
+        initial.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
+        who.gravity = Gravity.START
+        who.layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(14) }
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+        listOf(name, title, status).forEach { it.gravity = Gravity.START }
+        topSpace.visibility = View.GONE
+        title.maxLines = 1
+        points.visibility = View.GONE
+        ringRow.visibility = View.GONE
+        callRow.visibility = View.VISIBLE
+        startTimer()
+    }
+
+    /** "Chat": stop ringing and open the app's chat with Max instead. */
+    private fun openChat() {
+        startActivity(Intent(this, MainActivity::class.java).putExtra("chat", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        hangUp()
     }
 
     private lateinit var timer: Chronometer
@@ -526,30 +608,69 @@ class CallActivity : Activity() {
     }
 
     /** A round call button with its label underneath, as on a phone's dialer. */
-    private fun roundButton(icon: Int, label: String, fill: Int, tint: Int, turn: Float = 0f, onClick: () -> Unit): Pair<LinearLayout, TextView> {
+    private fun roundButton(icon: Int, label: String, fill: Int, size: Int, onClick: () -> Unit): Pair<LinearLayout, TextView> {
         val key = ImageButton(this).apply {
             setImageResource(icon)
-            setColorFilter(tint)
-            rotation = turn
-            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-            setPadding(dp(18), dp(18), dp(18), dp(18))
+            setColorFilter(Color.WHITE)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            val p = dp(size) * 27 / 100
+            setPadding(p, p, p, p)
             background = StateListDrawable().apply {
-                addState(intArrayOf(android.R.attr.state_pressed), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(fill); alpha = 150 })
-                addState(intArrayOf(), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(fill) })
+                addState(intArrayOf(android.R.attr.state_pressed), oval(fill, null).apply { alpha = 150 })
+                addState(intArrayOf(), oval(fill, null))
             }
             contentDescription = label
             setOnClickListener { onClick() }
         }
-        val name = text(label, 13f, muted, Typeface.DEFAULT).apply { gravity = Gravity.CENTER; setPadding(0, dp(8), 0, 0) }
+        val name = text(label, 12f, muted, Typeface.DEFAULT).apply { gravity = Gravity.CENTER; setPadding(0, dp(8), 0, 0) }
         val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
-            addView(key, LinearLayout.LayoutParams(dp(68), dp(68)))
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM
+            addView(key, LinearLayout.LayoutParams(dp(size), dp(size)))
             addView(name)
         }
         box.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         return box to name
     }
-    private fun roundRow() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, dp(18), 0, dp(10)) }
+    private fun roundRow() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM; setPadding(0, dp(18), 0, 0) }
+
+    /** One line on what the call is about, on the ringing screen. */
+    private fun pointCard(icon: String, s: String) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+        background = GradientDrawable().apply { setColor(card); cornerRadius = dp(14).toFloat() }
+        val res = when (icon) { "money" -> R.drawable.ic_money; "calendar" -> R.drawable.ic_calendar; "print" -> R.drawable.ic_print
+            "chat" -> R.drawable.ic_chat; "person" -> R.drawable.ic_person; else -> R.drawable.ic_task }
+        addView(ImageView(this@CallActivity).apply { setImageResource(res); setColorFilter(pink) }, LinearLayout.LayoutParams(dp(20), dp(20)))
+        addView(text(s, 14f, ink, Typeface.DEFAULT).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12) })
+    }
+
+    // ---------- motion ----------
+    private fun pulse(v: View, delay: Long) {
+        anims += AnimatorSet().apply {
+            playTogether(listOf(View.SCALE_X to 1.9f, View.SCALE_Y to 1.9f, View.ALPHA to 0f).map { (prop, to) ->
+                ObjectAnimator.ofFloat(v, prop, if (prop == View.ALPHA) 0.5f else 1f, to).apply { repeatCount = ValueAnimator.INFINITE } })
+            duration = 2400
+            startDelay = delay
+            interpolator = DecelerateInterpolator()
+            start()
+        }
+    }
+    private fun breathe(v: View) {
+        anims += AnimatorSet().apply {
+            playTogether(listOf(View.SCALE_X, View.SCALE_Y).map { prop ->
+                ObjectAnimator.ofFloat(v, prop, 1f, 1.07f).apply { repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE } })
+            duration = 800
+            interpolator = AccelerateDecelerateInterpolator()
+            start()
+        }
+    }
+    private fun rise(v: View, delay: Long) {
+        v.alpha = 0f
+        v.translationY = dp(14).toFloat()
+        v.animate().alpha(1f).translationY(0f).setStartDelay(delay).setDuration(450).setInterpolator(DecelerateInterpolator()).start()
+    }
 
     private fun toggleSpeaker() {
         speaker = !speaker
@@ -557,12 +678,36 @@ class CallActivity : Activity() {
         speakerLabel.text = if (speaker) "Earpiece" else "Speaker"
     }
 
+    /** The conversation as chat bubbles: Max on the left, you on the right, misses as a quiet note. */
     private fun line(who: String, text: String) {
         if (text.isBlank()) return
-        log.addView(text("$who:  $text", 16f, if (who == "Max") ink else blue, Typeface.DEFAULT).apply {
-            setPadding(0, dp(6), 0, dp(6))
+        val me = who == "You"
+        val note = who == "·"
+        val v = if (note) text(text, 12f, muted, Typeface.DEFAULT)
+        else text(text, 15f, if (me) Color.parseColor("#FFD0E6") else ink, Typeface.DEFAULT).apply {
+            setPadding(dp(12), dp(9), dp(12), dp(9))
+            setLineSpacing(0f, 1.15f)
+            val r = dp(14).toFloat(); val s = dp(4).toFloat()
+            background = GradientDrawable().apply {
+                setColor(if (me) Color.parseColor("#2A1020") else card)
+                cornerRadii = if (me) floatArrayOf(r, r, r, r, s, s, r, r) else floatArrayOf(r, r, r, r, r, r, s, s)
+            }
+        }
+        log.addView(v, LinearLayout.LayoutParams(-2, -2).apply {
+            gravity = when { note -> Gravity.CENTER_HORIZONTAL; me -> Gravity.END; else -> Gravity.START }
+            topMargin = dp(8)
+            if (me) marginStart = dp(48) else if (!note) marginEnd = dp(48)
         })
+        v.alpha = 0f
+        v.translationY = dp(8).toFloat()
+        v.animate().alpha(1f).translationY(0f).setDuration(250).start()
         scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun oval(fill: Int, stroke: Int?) = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(fill)
+        if (stroke != null) setStroke(dp(2), stroke)
     }
 
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, 0) }

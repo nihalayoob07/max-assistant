@@ -112,4 +112,5 @@ document.addEventListener('click', async (e) => {
 window.maxNative = { onResume() { serverOk = null; if (view === 'setup') render(); else refresh(true); } };
 
 // First run: open on Setup until the must-haves are done.
-if (setupItems().items.some((i) => !i[3] && !i[4])) go('setup');
+if (location.hash === '#chat') go('chat');   // "Chat" on a ringing call
+else if (setupItems().items.some((i) => !i[3] && !i[4])) go('setup');

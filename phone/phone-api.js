@@ -22,7 +22,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 // Instant answers, the morning brief and its helpers, shared with the desktop app.
-const { waCommand, waApply, smallTalk, askedQuestion, intent, answer: quickAnswer, brief, ORDERS, parseOrders, hm12, person } = require(path.join(__dirname, '..', 'app', 'quick.js'));
+const { waCommand, waApply, smallTalk, askedQuestion, intent, answer: quickAnswer, brief, ORDERS, parseOrders, hm12, person, plural } = require(path.join(__dirname, '..', 'app', 'quick.js'));
 
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const [HOST, PORT] = arg('listen', '0.0.0.0:18660').split(':');
@@ -342,7 +342,8 @@ const questions = async () => (await relay('GET', '/questions')).items || [];
 
 const isReminder = (e) => /^remind(er)?\b/i.test(e.title);
 
-// What Max says when the call is answered, and the buttons that answer it without talking.
+// What Max says when the call is answered, and the buttons that answer it without talking. points: what the call is
+// about, as a few short lines the ringing screen shows ([icon, text]; icons: money, calendar, print, chat, task, person).
 async function callInfo(id) {
   const kind = kindOf(id);
   if (kind === 'deal') {
@@ -352,7 +353,8 @@ async function callInfo(id) {
     if (c.counter) buttons.push({ label: `COUNTER ${money(c.counter)}`, style: 'action', decision: { action: 'counter', price: c.counter, drop: 0 } });
     buttons.push({ label: 'DECLINE', style: 'danger', decision: { action: 'decline' } });
     return { id, kind, title: `${c.business}: ${c.product}`, sub: `${c.contact} · ${id}`,
-      info: c.ours ? `THEIR OFFER ${money(c.theirs)} · WE'RE AT ${money(c.ours)} · FLOOR ${money(c.floor)}` : '', say: script(c), buttons, deal: c };
+      info: c.ours ? `THEIR OFFER ${money(c.theirs)} · WE'RE AT ${money(c.ours)} · FLOOR ${money(c.floor)}` : '', say: script(c), buttons, deal: c,
+      points: c.ours ? [['money', `Their offer ${money(c.theirs)}`], ['money', `We're at ${money(c.ours)}`], ['money', `Floor ${money(c.floor)}`]] : [] };
   }
   if (kind === 'event') {
     const [eid, date] = id.split('@');
@@ -361,16 +363,17 @@ async function callInfo(id) {
     const say = isReminder(e) ? `${HI} Your reminder: ${e.title.replace(/^remind(er)?:?\s*(me\s*(to)?\s*)?/i, '')}.`
       : `${HI} ${e.title} is at ${hm12(e.start)}, in about ten minutes.`;
     return { id, kind, title: e.title, sub: `${e.start === 'allday' ? 'All day' : e.start} · ${date}`, info: '',
+      points: [['calendar', e.start === 'allday' ? 'All day' : `At ${hm12(e.start)}`]],
       say: `${say} Anything you need from me?`, buttons: [] };
   }
   if (kind === 'question') {
     const q = (await questions()).find((x) => `q:${x.id}` === id);
     if (!q) throw new Error('that question was already answered');
-    if (q.kind === 'handler') return { id, kind, title: `New chat: ${q.chat}`, sub: 'WhatsApp', info: '',
+    if (q.kind === 'handler') return { id, kind, title: `New chat: ${q.chat}`, sub: 'WhatsApp', info: '', points: [['chat', q.them]],
       say: `${HI} A new WhatsApp chat from ${person(q.chat)}. They said: ${q.them}. Should I handle it, or will you?`,
       buttons: [{ label: 'MAX HANDLES IT', style: 'primary', decision: { action: 'handler', handler: 'max' } },
         { label: "I'LL HANDLE IT", style: 'action', decision: { action: 'handler', handler: 'me' } }] };
-    return { id, kind, title: `Question: ${q.chat}`, sub: 'WhatsApp', info: q.ask,
+    return { id, kind, title: `Question: ${q.chat}`, sub: 'WhatsApp', info: q.ask, points: [['chat', q.them], ['task', q.ask]],
       say: `${HI} ${person(q.chat)} on WhatsApp needs you: ${q.ask}. They said: ${q.them}. What should I tell them?`,
       buttons: [{ label: "I'LL REPLY MYSELF", style: 'action', decision: { action: 'skip' } }] };
   }
@@ -383,11 +386,17 @@ async function callInfo(id) {
     const l = data.leads.find((x) => x.id === lid) || {};
     const who = person(l.contact || 'a client');
     return { id, kind, title: `Deal closed: ${money(price)}`, sub: [l.contact, l.business].filter(Boolean).join(' · '), info: '',
+      points: [['money', `${money(price)} for the ${product}`], ['person', who]],
       say: `${HI} Good news: ${who} agreed to ${money(price)} for the ${product}${Number(qty) > 1 ? `, ${qty} of them` : ''}` +
         `${l.business ? `, for ${l.business}` : ''}. I've sent you the quote on Telegram. Anything you want me to do?`, buttons: [] };
   }
   const [data, orders] = await Promise.all([load(), sh(ORDERS).then(parseOrders).catch(() => [])]);
-  return { id, kind, title: 'Your morning brief', sub: data.today, info: '', say: brief(data, orders, OWNER), buttons: [] };
+  const n = { print: orders.filter((o) => o.status === 'paid').length, calendar: data.events.filter((e) => e.date === data.today).length,
+    money: data.leads.filter((l) => l.status === 'escalated').length };
+  const points = [['print', n.print && `${plural(n.print, 'order')} to make`], ['calendar', n.calendar && `${plural(n.calendar, 'event')} today`],
+    ['money', n.money && `${plural(n.money, 'deal')} waiting on you`]].filter(([, t]) => t);
+  return { id, kind, title: 'Your morning brief', sub: data.today, info: '', say: brief(data, orders, OWNER), buttons: [],
+    points: points.length ? points : [['task', 'Nothing urgent today']] };
 }
 
 // After a brief or a reminder the call is a conversation with main Max (each call keeps its own short history).
