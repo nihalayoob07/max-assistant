@@ -83,7 +83,7 @@ async function connectOnce() {
   await serverConfig();
   if (!token) {
     const out = await run(['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', HOST,
-      `export PATH=$HOME/.local/bin:$PATH; nemohermes ${CFG.SANDBOX} gateway-token --quiet 2>/dev/null | tail -1`], 30000);
+      `export PATH=$HOME/.local/bin:$PATH; nemohermes ${CFG.SANDBOX} gateway-token --quiet 2>/dev/null | tail -1`], 90000);   // usually 2-4 s, but 25 s+ while nemohermes waits on its host-wide lock
     token = out.trim();
     if (token.length < 20) { token = ''; throw new Error("couldn't get Max's token from the server"); }
   }
