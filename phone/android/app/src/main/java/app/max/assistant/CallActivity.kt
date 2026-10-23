@@ -268,19 +268,54 @@ class CallActivity : Activity() {
             say("Okay. Bye.") { hangUp() }; return
         }
         status.text = "Thinking…"
-        // Small talk and common questions come back at once; only a slower answer from main Max gets "One moment." first.
-        val stall = Runnable { if (talking) say("One moment.") }
-        handler.postDelayed(stall, 1200)
+        // Small talk and common questions come back at once. A slower answer from main Max gets conversation while it
+        // works: a reply that fits what was asked, then a varied "still on it" now and then. The answer waits for the
+        // line being spoken to finish, so nothing is cut off mid-sentence.
+        val lines = keepTalking(text)
+        var next = 0
+        var answer: (() -> Unit)? = null
+        val chat = object : Runnable {
+            override fun run() {
+                if (!talking || next >= lines.size) return
+                say(lines[next++]) { answer?.let { answer = null; it() } }
+                handler.postDelayed(this, if (next == 1) 7_000 else 10_000)
+            }
+        }
+        handler.postDelayed(chat, 1_200)
         thread {
             val r = runCatching { JSONObject(Api.call(this, "POST", "/call/answer", JSONObject().put("id", id).put("text", text).toString(), 240_000)) }
             runOnUiThread {
-                handler.removeCallbacks(stall)
-                r.onSuccess { j ->
-                    pending = j.optJSONObject("decision")
-                    say(j.optString("say")) { listen() }
-                }.onFailure { e -> say("I couldn't reach the server: ${e.message}") { listen() } }
+                handler.removeCallbacks(chat)
+                val reply = {
+                    r.onSuccess { j ->
+                        pending = j.optJSONObject("decision")
+                        say(j.optString("say")) { listen() }
+                    }.onFailure { e -> say("I couldn't reach the server: ${e.message}") { listen() } }
+                    Unit
+                }
+                // A waiting line mid-sentence finishes first; one still loading (or stopped by Talk) just gives way.
+                val midLine = runCatching { player?.isPlaying == true }.getOrDefault(false) || tts?.isSpeaking == true
+                if (midLine) answer = reply else reply()
             }
         }
+    }
+
+    /** What Max says while main Max works on an answer: first something that fits what was asked, then "still on it"
+     *  lines that don't repeat. Statements only, since Max isn't listening while it waits. */
+    private fun keepTalking(said: String): List<String> {
+        val t = said.lowercase(Locale.US)
+        fun has(vararg w: String) = w.any { t.contains(it) }
+        val first = when {
+            has("calendar", "schedule", "meeting", "free on", "busy on", "appointment") -> "Let me look at your calendar."
+            has("lead", "deal", "client", "customer", "order", "quote", "invoice", "payment") -> "Let me check on that for you."
+            has("open", "play", "youtube", "laptop", "server", "computer", "screen", "volume") -> "On it."
+            has("search", "find", "look up", "look into", "research", "who is", "what is", "how do", "why") -> "Good question. Let me look that up."
+            has("remind", "add", "note", "save", "remember", "todo", "to do") -> "Sure, noting that down."
+            else -> listOf("Sure, give me a second.", "Okay, let me think about that.", "Got it, one sec.").random()
+        }
+        val more = listOf("Still working on it.", "Pulling it together now.", "Bear with me, nearly there.", "Almost there, thanks for waiting.",
+            "This one's taking a little longer. Hang on.").shuffled()
+        return listOf(first) + more
     }
 
     /** The confirmed decision goes to the same owner path as the desktop card and Telegram's buttons. */
