@@ -66,7 +66,7 @@ class CallActivity : Activity() {
 
     private var id = ""
     private var deal: JSONObject? = null   // what this call is about (server: GET /call)
-    private val talking get() = id.startsWith("brief:") || id.startsWith("E") || id.startsWith("me:")   // after Max speaks, a conversation with Max
+    private val talking get() = id.startsWith("brief:") || id.startsWith("E") || id.startsWith("me:") || id.startsWith("won:")   // after Max speaks, a conversation with Max
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private var ttsInit = false        // the engine answered (ready or not)

@@ -44,6 +44,7 @@ class CallService : Service() {
             id.startsWith("q:") -> "A customer needs you"
             id.startsWith("E") -> "Meeting or reminder"
             id.startsWith("me:") -> "You called Max"
+            id.startsWith("won:") -> "Deal closed"
             else -> "$id needs your decision"
         }
         fun dial(ctx: Context) {
