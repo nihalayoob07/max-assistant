@@ -379,6 +379,27 @@ async function callInfo(id) {
 
 // After a brief or a reminder the call is a conversation with main Max (each call keeps its own short history).
 const talks = new Map();
+// While main Max works on a call question, the phone says one short line that shows it understood ("Weekend offer,
+// let me think about what'd work."). A tiny, tool-less call to the fast model, made inside the sandbox where the
+// NVIDIA key is added on the way out; about a second. The phone has its own fallback if this is slow or fails.
+async function ack(said) {
+  const body = JSON.stringify({
+    model: 'nvidia/nemotron-3.5-lightning-30b-a3b', max_tokens: 40, temperature: 0.7,
+    chat_template_kwargs: { enable_thinking: false },   // it's a reasoning model: thinking alone would use up the 40 tokens
+    messages: [
+      { role: 'system', content: `You are Max, ${OWNER || 'the owner'}'s assistant, on a phone call with him. He just asked you something and you are working on it. ` +
+        'Say ONE short, casual spoken sentence (under 12 words) that shows you understood what he asked, in your own words, without answering it ' +
+        'and without asking anything. No lists, no emoji, no quotes. Examples: "Weekend offer, let me think about what would work." / ' +
+        '"Ah, the Ravi deal. Let me pull it up." / "Opening YouTube on your laptop now."' },
+      { role: 'user', content: String(said || '').slice(0, 400) },
+    ],
+  });
+  const out = await sandbox(`curl -s -m 5 https://integrate.api.nvidia.com/v1/chat/completions -H 'Content-Type: application/json' -H "Authorization: Bearer $NVIDIA_INFERENCE_API_KEY" -d @-`, body, 8000);
+  const line = String(JSON.parse(out)?.choices?.[0]?.message?.content || '').replace(/["*_#`]/g, '').replace(/\s+/g, ' ').trim();
+  if (!line || line.length > 120 || line.includes('?')) throw new Error('no usable line');
+  return { ack: line };
+}
+
 async function talk(id, said, opening) {
   if (!talks.has(id)) talks.set(id, [{ role: 'assistant', content: opening }]);
   const m = talks.get(id);
@@ -525,6 +546,7 @@ const ROUTES = {
   'POST /token': async (j) => { if (!/^[\w:-]{20,4096}$/.test(j.token || '')) throw new Error('bad token'); write('fcm-token', j.token); return { ok: true }; },
   'GET /call': async (_j, q) => { const { deal: _d, ...c } = await callInfo(callId(q.get('id'))); return { ...c, pronounce: PRONOUNCE }; },
   'POST /call/answer': (j) => answer(callId(j.id), String(j.text || '').slice(0, 500)),
+  'POST /call/ack': (j) => ack(j.text),
   'POST /call/decide': (j) => decideCall(callId(j.id), j),
   'POST /ring': async (j) => { await ring(callId(j.id)); return { ok: true }; },
   'POST /tts': (j) => speech(j.text),
