@@ -324,7 +324,7 @@ async function ring(id) {
 // Call ids: L0002 (a deal) · E0003@2026-10-21 (a calendar event that day) · q:c<chat id> (a desk question) · brief:2026-10-21
 // me:<ms> is a call the owner started from the app.
 const kindOf = (id) => (/^L\d{4}$/.test(id) ? 'deal' : /^E\d{4}@\d{4}-\d{2}-\d{2}$/.test(id) ? 'event' : /^q:c\w{1,30}$/.test(id) ? 'question'
-  : /^brief:\d{4}-\d{2}-\d{2}$/.test(id) ? 'brief' : /^me:\d{1,13}$/.test(id) ? 'owner' : null);
+  : /^brief:\d{4}-\d{2}-\d{2}$/.test(id) ? 'brief' : /^me:\d{1,13}$/.test(id) ? 'owner' : /^won:L\d{4}$/.test(id) ? 'won' : null);
 const callId = (s) => { const id = String(s || ''); if (!kindOf(id)) throw new Error('bad call id'); return id; };
 
 // The front desk relay (desk/desk-relay.js) holds the WhatsApp questions that wait on the owner.
@@ -373,6 +373,17 @@ async function callInfo(id) {
       buttons: [{ label: "I'LL REPLY MYSELF", style: 'action', decision: { action: 'skip' } }] };
   }
   if (kind === 'owner') return { id, kind, title: 'You called Max', sub: '', info: '', say: `${HI} What can I do for you?`, buttons: [] };
+  if (kind === 'won') {   // the front desk closed a deal on its own (scripts/desk.py writes closed_by_max.tsv)
+    const lid = id.slice(4);
+    const [data, row] = await Promise.all([load(),
+      sh(`awk -F'\\t' -v id=${lid} '$1 == id' ~/.hermes/workspace/business/closed_by_max.tsv 2>/dev/null | tail -1`)]);
+    const [, , product = '', qty = '1', price = '0'] = row.trim().split('\t');
+    const l = data.leads.find((x) => x.id === lid) || {};
+    const who = person(l.contact || 'a client');
+    return { id, kind, title: `Deal closed: ${money(price)}`, sub: [l.contact, l.business].filter(Boolean).join(' · '), info: '',
+      say: `${HI} Good news: ${who} agreed to ${money(price)} for the ${product}${Number(qty) > 1 ? `, ${qty} of them` : ''}` +
+        `${l.business ? `, for ${l.business}` : ''}. I've sent you the quote on Telegram. Anything you want me to do?`, buttons: [] };
+  }
   const [data, orders] = await Promise.all([load(), sh(ORDERS).then(parseOrders).catch(() => [])]);
   return { id, kind, title: 'Your morning brief', sub: data.today, info: '', say: brief(data, orders, OWNER), buttons: [] };
 }
@@ -495,8 +506,8 @@ function quiet(now) {
   return a > b ? now >= a || now < b : now >= a && now < b;
 }
 async function watch() {
-  const out = await sh(`date '+%F %H:%M'; echo @@; awk -F'\\t' '$7 == "escalated" { print $1 }' ~/.hermes/workspace/business/leads.tsv 2>/dev/null; echo @@; cat ~/.hermes/workspace/calendar.tsv 2>/dev/null`);
-  const [clock, esc, calTsv] = out.split('@@\n');
+  const out = await sh(`date '+%F %H:%M'; echo @@; awk -F'\\t' '$7 == "escalated" { print $1 }' ~/.hermes/workspace/business/leads.tsv 2>/dev/null; echo @@; cat ~/.hermes/workspace/calendar.tsv 2>/dev/null; echo @@; cat ~/.hermes/workspace/business/closed_by_max.tsv 2>/dev/null`);
+  const [clock, esc, calTsv, wonTsv = ''] = out.split('@@\n');
   const [today, hm] = clock.trim().split(' ');
   const now = mins(hm);
   const escalated = esc.split('\n').filter((x) => /^L\d{4}$/.test(x));
@@ -520,6 +531,13 @@ async function watch() {
     for (const q of await questions().catch(() => [])) {
       const key = `q:${q.id}:${q.ask.slice(0, 40)}:${q.them.slice(-40)}`;
       if (!once.has(key)) { once.add(key); due.push(`q:${q.id}`); }
+    }
+    // Deals the front desk closed on its own: good news, once per deal (held, like questions, while calls are off).
+    for (const line of wonTsv.split('\n')) {
+      const [lid, at] = line.split('\t');
+      if (!/^L\d{4}$/.test(lid || '')) continue;
+      const key = `won:${lid}:${at}`;
+      if (!once.has(key)) { once.add(key); due.push(`won:${lid}`); }
     }
     const b = mins(read('brief-time') || '07:30');
     if (now >= b && now < b + 180 && !once.has(`brief:${today}`)) { once.add(`brief:${today}`); due.push(`brief:${today}`); }
