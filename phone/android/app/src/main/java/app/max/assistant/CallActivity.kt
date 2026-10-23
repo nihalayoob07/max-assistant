@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.media.AudioAttributes
@@ -28,7 +30,9 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
+import android.view.animation.LinearInterpolator
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -117,6 +121,7 @@ class CallActivity : Activity() {
         CallService.answer(this)
         ringRow.visibility = View.GONE
         callRow.visibility = View.VISIBLE
+        shrinkCore()
         status.text = "Connecting…"
         route()
         tts = TextToSpeech(this) { ok ->
@@ -467,15 +472,19 @@ class CallActivity : Activity() {
     }
 
     private fun build() {
+        // Centred like a phone call: who's calling, Max's core in the middle, then the conversation and the buttons.
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(30), dp(22), dp(22)) }
-        col.addView(text(if (id.startsWith("me:")) "Outgoing call" else "Incoming call", 14f, muted, Typeface.DEFAULT))
-        col.addView(text("MAX", 56f, blue, condensed).apply { letterSpacing = 0.3f })
-        title = text(CallService.label(id), 20f, ink, condensed)
-        col.addView(title)
-        prices = text("", 13f, blue, mono).apply { setPadding(0, dp(10), 0, dp(6)) }
-        col.addView(prices)
-        status = text("Calling you…", 15f, blue, Typeface.DEFAULT_BOLD).apply { setPadding(0, dp(12), 0, dp(10)) }
-        col.addView(status)
+        val center = LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL }
+        col.addView(text(if (id.startsWith("me:")) "Outgoing call" else "Incoming call", 14f, muted, Typeface.DEFAULT), center)
+        core = core()
+        col.addView(core, LinearLayout.LayoutParams(dp(200), dp(200)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(28); bottomMargin = dp(20) })
+        col.addView(text("MAX", 40f, blue, condensed).apply { letterSpacing = 0.35f }, center)
+        title = text(CallService.label(id), 20f, ink, condensed).apply { gravity = Gravity.CENTER }
+        col.addView(title, center)
+        prices = text("", 13f, blue, mono).apply { gravity = Gravity.CENTER; setPadding(0, dp(8), 0, 0) }
+        col.addView(prices, center)
+        status = text("Calling you…", 15f, blue, Typeface.DEFAULT_BOLD).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(10)) }
+        col.addView(status, center)
         log = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll = ScrollView(this).apply { addView(log); isFillViewport = true }
         col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -505,6 +514,38 @@ class CallActivity : Activity() {
             }
         }
         setContentView(col)
+    }
+
+    /** Max's core, as in the apps: a faint outer ring, a slowly turning dashed ring, and a glowing centre that breathes.
+     *  Two simple animations on their own layers, so it stays smooth on a slow phone. */
+    private lateinit var core: FrameLayout
+    private fun core(): FrameLayout {
+        fun ring(inset: Int, width: Float, color: Int, dash: Float = 0f, gap: Float = 0f) = View(this).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setStroke(dp(1).toFloat().times(width).toInt().coerceAtLeast(1), color, dash, gap) }
+            layoutParams = FrameLayout.LayoutParams(-1, -1).apply { setMargins(inset, inset, inset, inset) }
+        }
+        val faint = Color.argb(70, Color.red(blue), Color.green(blue), Color.blue(blue))
+        val spin = ring(dp(14), 2.5f, blue, dp(10).toFloat(), dp(7).toFloat()).apply { setLayerType(View.LAYER_TYPE_HARDWARE, null) }
+        val glow = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL; gradientType = GradientDrawable.RADIAL_GRADIENT; gradientRadius = dp(46).toFloat()
+                colors = intArrayOf(Color.parseColor("#E8F6FC"), blue, Color.TRANSPARENT)
+            }
+            layoutParams = FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(54), dp(54), dp(54), dp(54)) }
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        }
+        ObjectAnimator.ofFloat(spin, "rotation", 0f, 360f).apply { duration = 24_000; repeatCount = ValueAnimator.INFINITE; interpolator = LinearInterpolator(); start() }
+        for (p in listOf("scaleX", "scaleY")) ObjectAnimator.ofFloat(glow, p, 1f, 0.86f).apply {
+            duration = 1_600; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; start()
+        }
+        return FrameLayout(this).apply {
+            addView(ring(0, 1f, faint)); addView(spin); addView(ring(dp(40), 1f, faint)); addView(glow)
+        }
+    }
+    /** Once the call is answered, the core gets smaller so the conversation has room. */
+    private fun shrinkCore() {
+        core.layoutParams = (core.layoutParams as LinearLayout.LayoutParams).apply { width = dp(120); height = dp(120); topMargin = dp(14); bottomMargin = dp(10) }
+        core.requestLayout()
     }
 
     private fun toggleSpeaker() {
