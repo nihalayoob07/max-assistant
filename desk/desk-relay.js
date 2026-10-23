@@ -61,6 +61,12 @@ const saveDrafts = () => {
 };
 let awaiting = null;
 const mode = () => (read('mode') === 'auto' ? 'auto' : 'ask');
+// The WhatsApp extension's switches, set from either app or by asking Max (phone/phone-api.js). Only the ones set
+// here go out with the outbox and win over the extension's own; the rest show the server defaults (desk/max-wa.sh).
+const WA_DEFAULTS = { enabled: true, unsavedOnly: false, selfTest: true };
+const waSet = () => { try { return JSON.parse(read('extension.json')) || {}; } catch { return {}; } };
+const waState = () => ({ ...WA_DEFAULTS, ...waSet(), autoSend: mode() === 'auto',
+  chats: Object.values(chats).map((c) => ({ id: c.id, chat: c.chat, handler: c.handler })) });
 const setMode = (m) => fs.writeFileSync(path.join(CFG, 'mode'), m === 'auto' ? 'auto' : 'ask');
 const modeText = () => (mode() === 'auto'
   ? '🟢 Auto-send is ON: Max sends replies itself and you get a copy here.'
@@ -260,7 +266,7 @@ if (TOKEN) {
 
 /* ---------- HTTP ---------- */
 const send = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
-const ROUTES = ['/desk', '/outbox/done', '/draft', '/tg/photo', '/tg/text', '/tg/qr', '/answer'];
+const ROUTES = ['/wa', '/desk', '/outbox/done', '/draft', '/tg/photo', '/tg/text', '/tg/qr', '/answer'];
 // The linking QR: one Telegram message, its picture swapped for every new code (they expire in ~20 s).
 let qrMsg = null;
 async function showQr(png) {
@@ -288,6 +294,7 @@ http.createServer((req, res) => {
       .map(([, c]) => ({ id: c.id, chat: c.chat, kind: c.ask ? 'question' : 'handler', ask: c.ask || '', them: them(c.pending) }));
     return send(res, 200, { items });
   }
+  if (req.method === 'GET' && req.url === '/wa') return send(res, 200, waState());
   if (req.method === 'GET' && req.url === '/health') return send(res, 200, { ok: true, bot: !!TOKEN, mode: mode() });
   if (req.method === 'GET' && req.url === '/outbox') {
     if (TOKEN) {   // only what the owner approved; these are sent, not just pasted
@@ -295,7 +302,7 @@ http.createServer((req, res) => {
         .map(([id, d]) => ({ id, chat: d.chat, contact: d.contact, reply: d.reply, send: true }));
       // chats the owner is handling: the extension never opens or reads them until handed back to Max
       const ignored = [...new Set(Object.entries(chats).filter(([, c]) => c.handler === 'me').flatMap(([k, c]) => [k, c.chat]))];
-      return send(res, 200, { items, ignored });
+      return send(res, 200, { items, ignored, settings: waSet() });
     }
     return desk({}, '--outbox').then((r) => send(res, 200, r), (e) => send(res, 502, { error: e.message }));
   }
@@ -316,6 +323,22 @@ http.createServer((req, res) => {
         }
         if (!/^L\d{4}-\d+$/.test(id)) return send(res, 400, { error: 'bad id' });
         return send(res, 200, await desk({}, `--outbox done ${id}`));
+      }
+      if (req.url === '/wa') {   // { set: { enabled, unsavedOnly, selfTest, autoSend } } and/or { chat: id, handler: 'max'|'me' }
+        const set = j.set || {};
+        const keep = Object.fromEntries(Object.keys(WA_DEFAULTS).filter((k) => typeof set[k] === 'boolean').map((k) => [k, set[k]]));
+        if (Object.keys(keep).length) fs.writeFileSync(path.join(CFG, 'extension.json'), JSON.stringify({ ...waSet(), ...keep }));
+        if (typeof set.autoSend === 'boolean') setMode(set.autoSend ? 'auto' : 'ask');
+        if (j.chat) {
+          const [contact, c] = byId(String(j.chat));
+          if (!c) return send(res, 404, { error: 'no such chat' });
+          if (j.handler === 'me') { Object.assign(c, { handler: 'me', pending: null, ask: null }); saveChats(); Promise.resolve(say(`🙋 You're handling ${c.chat}; Max stays out`)).catch(() => {}); }
+          else if (j.handler === 'max') {
+            c.handler = 'max'; saveChats(); Promise.resolve(say(`🤖 Max handles ${c.chat}`)).catch(() => {});
+            if (c.pending) runFor(contact, c.pending).catch((e) => log('runFor', e.message));
+          } else return send(res, 400, { error: 'handler is max or me' });
+        }
+        return send(res, 200, waState());
       }
       if (!TOKEN && req.url !== '/desk') return send(res, 409, { error: 'no desk bot configured' });
       if (req.url === '/answer') {   // The owner answered on a phone call: { id, handler: 'max'|'me' } or { id, answer }

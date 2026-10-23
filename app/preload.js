@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('max', {
   onPc: (cb) => ipcRenderer.on('pc-changed', (_e, pc) => cb(pc)),
   cal: (a) => ipcRenderer.invoke('cal', a),
   biz: (b) => ipcRenderer.invoke('biz', b),
+  wa: (body) => ipcRenderer.invoke('wa', body),
   voiceSpeed: (set) => ipcRenderer.invoke('voiceSpeed', set),
   win: (what) => ipcRenderer.send('win', what),
 });

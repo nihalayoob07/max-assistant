@@ -22,7 +22,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 // Instant answers, the morning brief and its helpers, shared with the desktop app.
-const { smallTalk, askedQuestion, intent, answer: quickAnswer, brief, ORDERS, parseOrders, hm12, person } = require(path.join(__dirname, '..', 'app', 'quick.js'));
+const { waCommand, waApply, smallTalk, askedQuestion, intent, answer: quickAnswer, brief, ORDERS, parseOrders, hm12, person } = require(path.join(__dirname, '..', 'app', 'quick.js'));
 
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const [HOST, PORT] = arg('listen', '0.0.0.0:18660').split(':');
@@ -159,6 +159,8 @@ function deskMode(set) {
 let maxToken = '';
 // Small talk and the common questions (list, calendar, follow-ups, leads, brief) answered straight away, or null.
 async function instant(text, asked = false) {   // asked: Max's last line was a question, so "okay" answers it
+  const wa = waCommand(text);   // "pause whatsapp", "I'll handle Nuha"...: changed straight away through the desk relay
+  if (wa) { const said = await waApply(wa, relay).catch((e) => `I couldn't change WhatsApp: ${e.message}.`); if (said) return said; }
   const hello = smallTalk(text, OWNER, { tz: TZ, asked });
   if (hello) return hello;
   const want = intent(text);
@@ -599,6 +601,8 @@ const ROUTES = {
   'POST /call/decide': (j) => decideCall(callId(j.id), j),
   'POST /ring': async (j) => { await ring(callId(j.id)); return { ok: true }; },
   'POST /tts': (j) => speech(j.text),
+  'GET /wa': () => relay('GET', '/wa'),
+  'POST /wa': (j) => relay('POST', '/wa', { set: j.set, chat: j.chat, handler: j.handler }),
   'POST /voice-speed': async (j) => ({ speed: voiceSpeed(j.speed) }),
 };
 if (require.main === module) {

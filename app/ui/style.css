@@ -460,4 +460,7 @@ textarea.q-in.big { min-height: 260px; font: 14px/1.55 var(--mono); }
 .speed-row output { font: 600 16px var(--mono); color: var(--blue-text); }
 #speed { width: 100%; accent-color: var(--blue); height: 28px; cursor: pointer; }
 .speed-ends { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-top: -6px; }
+.wa-set { max-width: 620px; display: grid; gap: 14px; }
+.wa-set .switch { align-items: flex-start; text-align: left; }
+.wa-set .switch small { display: block; color: var(--muted); font-weight: 400; margin-top: 2px; }
 .voice-set button { justify-self: start; margin-top: 6px; }

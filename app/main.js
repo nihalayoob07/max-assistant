@@ -210,10 +210,23 @@ async function laptopHands(p, body) {
   if (!r.ok) throw new Error(`the laptop helper said ${r.status}`);
   return r.json();
 }
+// The front desk relay on the server (desk/desk-relay.js), over SSH with the key that lives there.
+async function deskRelay(method, p, body) {
+  const pipe = body ? `echo ${Buffer.from(JSON.stringify(body)).toString('base64')} | base64 -d | ` : '';
+  const out = await run(['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', HOST, `${pipe}curl -s -m 60 -X ${method} -H "X-Desk-Key: $(cat ~/.config/max-desk/key)" ` +
+    `-H 'Content-Type: application/json' ${body ? '--data-binary @- ' : ''}http://127.0.0.1:18650${p}`], 75000);
+  let j;
+  try { j = JSON.parse(out); } catch { throw new Error("the front desk didn't answer"); }
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+ipcMain.handle('wa', (_e, body) => (body ? deskRelay('POST', '/wa', body) : deskRelay('GET', '/wa')));
 async function quickAction(messages) {
   const quick = quickReply(messages);
   if (quick) return quick;
   const last = messages.filter((m) => m.role === 'user').pop();
+  const wa = instant.waCommand(last?.content);   // "pause whatsapp", "I'll handle Nuha"... (see quick.js)
+  if (wa) { const said = await instant.waApply(wa, deskRelay).catch((e) => `I couldn't change WhatsApp: ${e.message}.`); if (said) return said; }
   const want = instant.intent(last?.content);
   if (want) {
     const [data, orders] = await Promise.all([sandbox(READ).then(parse),

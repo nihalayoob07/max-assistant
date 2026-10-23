@@ -57,8 +57,8 @@ let queue = Promise.resolve();
 // then marked done on the server.
 const warned = new Set();
 async function pollOutbox(tabId) {
-  const s = await settings();
-  if (!s.enabled || !s.token) return;
+  let s = await settings();
+  if (!s.token) return;
   const base = s.apiUrl.replace(/\/+$/, '');
   const headers = { 'Content-Type': 'application/json', 'X-Desk-Key': s.token };
   let items = [];
@@ -66,7 +66,11 @@ async function pollOutbox(tabId) {
     const r = await (await fetch(`${base}/outbox`, { headers })).json();
     items = r.items || [];
     if (Array.isArray(r.ignored)) await chrome.storage.local.set({ ignored: r.ignored });
+    // switches set from the apps or by asking Max (desk relay /wa); polled while paused too, so it can be turned back on
+    const remote = Object.fromEntries(['enabled', 'unsavedOnly', 'selfTest'].filter((k) => typeof r.settings?.[k] === 'boolean').map((k) => [k, r.settings[k]]));
+    if (Object.keys(remote).length) { await chrome.storage.local.set(remote); s = await settings(); }
   } catch { return; }
+  if (!s.enabled) return;
   const { chats = {} } = await chrome.storage.local.get('chats');
   const done = (id) => fetch(`${base}/outbox/done`, { method: 'POST', headers, body: JSON.stringify({ id }) }).catch(() => {});
   for (const it of items) {

@@ -213,11 +213,11 @@
     busy = true;
     try {
       const s = await chrome.runtime.sendMessage({ type: 'settings' }).catch(() => null);
-      if (!s?.enabled) return;
-      if (Date.now() - lastOutbox > 30000 && !composing()) {   // the owner's decisions, waiting to go to clients
+      if (Date.now() - lastOutbox > 30000 && !composing()) {   // the owner's decisions, waiting to go to clients (and the switches)
         lastOutbox = Date.now();
         chrome.runtime.sendMessage({ type: 'outbox' }).catch(() => {});
       }
+      if (!s?.enabled) return;
       if (await considerOpenChat(s)) return;   // sent, or waiting out a burst: stay on this chat
       if ([...inflight.keys()].some((t) => pending.has(t))) return;   // one chat at a time: wait for its reply
       if (composing()) return;   // never switch chats while the owner is typing

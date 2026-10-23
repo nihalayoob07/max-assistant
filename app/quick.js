@@ -166,4 +166,46 @@ function answer(want, data, { owner = '', orders = [], now = new Date() } = {}) 
   return null;
 }
 
-module.exports = { smallTalk, askedQuestion, intent, answer, brief, ORDERS, parseOrders, hm12, plural, list, person };
+// The WhatsApp extension, managed by asking ("pause whatsapp", "turn on auto send", "I'll handle Nuha", "you can
+// handle Raahil", "whatsapp settings"). waCommand only reads the words; waApply changes it through the desk relay
+// (call = (method, path, body) => relay's JSON) and says what changed, or null when no chat has that name.
+const WA = "(?:the )?(?:whats ?app|wa)(?: (?:extension|bot|replies|desk))?";
+const onOff = (w) => w === 'on';
+const NOT_A_CHAT = /^(it|that|this|them|those|these|everything|all|a look)$/;
+function waCommand(text) {
+  const t = normal(text);
+  let m;
+  if (new RegExp(`^(?:pause|stop|turn off|switch off|disable|mute) ${WA}$|^${WA} off$`).test(t)) return { set: { enabled: false } };
+  if (new RegExp(`^(?:resume|start|unpause|turn on|switch on|enable) ${WA}(?: again)?$|^${WA} (?:on|back on)$`).test(t)) return { set: { enabled: true } };
+  if ((m = /^(?:turn |switch )?(on|off) auto ?send$|^(?:turn |switch )?auto ?send (on|off)$/.exec(t))) return { set: { autoSend: onOff(m[1] || m[2]) } };
+  if ((m = /^(?:turn |switch )?(on|off) test mode$|^(?:turn |switch )?test mode (on|off)$/.exec(t))) return { set: { selfTest: onOff(m[1] || m[2]) } };
+  if ((m = /^(?:turn |switch )?(on|off) only unsaved(?: numbers)?$|^(?:turn |switch )?only unsaved(?: numbers)? (on|off)$/.exec(t))) return { set: { unsavedOnly: onOff(m[1] || m[2]) } };
+  if (/^only (?:reply to |answer )?unsaved numbers$/.test(t)) return { set: { unsavedOnly: true } };
+  if (/^(?:reply to|answer|include) saved contacts(?: too)?$/.test(t)) return { set: { unsavedOnly: false } };
+  if (new RegExp(`^${WA} (?:settings|status)$|^how(?:'s| is) ${WA} (?:set up|doing)$`).test(t)) return { show: true };
+  const chat = (name, handler) => { name = name.replace(/^(?:the )?(?:chat with |chat )/, '').replace(/ (?:chat|myself|from now on|for me)$/, '').trim(); return name && !NOT_A_CHAT.test(name) ? { chat: name, handler } : null; };
+  if ((m = /^(?:i'?ll|i will|let me|i'?m going to|i'?m gonna) (?:handle|deal with|reply to|answer|talk to|take over) (.+)$|^stay out of (.+)$/.exec(t))) return chat(m[1] || m[2], 'me');
+  if ((m = /^(?:you|max) (?:can |should )?(?:handle|take over|deal with|reply to|answer) (.+)$|^(?:hand|give|pass) (.+?) (?:back )?to(?: you| max)?$|^take over (.+)$/.exec(t))) return chat(m[1] || m[2] || m[3], 'max');
+  return null;
+}
+const chatName = (s) => String(s || '').toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+async function waApply(cmd, call) {
+  if (cmd.chat) {
+    const { chats = [] } = await call('GET', '/wa');
+    const c = chats.find((x) => chatName(x.chat) === cmd.chat) || chats.find((x) => chatName(x.chat).startsWith(cmd.chat + ' '));
+    if (!c) return null;
+    await call('POST', '/wa', { chat: c.id, handler: cmd.handler });
+    return cmd.handler === 'me' ? `Okay, ${c.chat} is yours. I won't read that chat again until you hand it back.` : `Got it, I'll handle ${c.chat} from now on.`;
+  }
+  const s = cmd.show ? await call('GET', '/wa') : await call('POST', '/wa', { set: cmd.set });
+  const set = cmd.set || {};
+  if ('enabled' in set) return set.enabled ? "WhatsApp's back on. I'll pick up new messages." : "Okay, WhatsApp's paused. I won't read or answer any chats until you turn it back on.";
+  if ('autoSend' in set) return set.autoSend ? "Auto-send's on: I'll send WhatsApp replies myself and give you a copy." : 'Auto-send is off: every reply waits for your okay on Telegram.';
+  if ('selfTest' in set) return `Test mode's ${set.selfTest ? 'on' : 'off'}.`;
+  if ('unsavedOnly' in set) return set.unsavedOnly ? "Okay, I'll only answer unsaved numbers." : "Okay, I'll answer saved contacts too.";
+  const mine = (s.chats || []).filter((c) => c.handler === 'me').map((c) => c.chat);
+  return `WhatsApp is ${s.enabled ? 'on' : 'paused'}, auto-send is ${s.autoSend ? 'on' : 'off'}, ${s.unsavedOnly ? 'only unsaved numbers' : 'all chats'}` +
+    `${s.selfTest ? ', test mode on' : ''}. ${mine.length ? `You're handling ${list(mine.slice(0, 5))}${mine.length > 5 ? ` and ${mine.length - 5} more` : ''}.` : "You aren't handling any chats yourself."}`;
+}
+
+module.exports = { waCommand, waApply, smallTalk, askedQuestion, intent, answer, brief, ORDERS, parseOrders, hm12, plural, list, person };

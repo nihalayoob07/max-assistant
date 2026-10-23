@@ -325,6 +325,44 @@ async function saveSpeed(v) {
   render();
 }
 
+/* ---------- WhatsApp ----------
+   The extension's switches and who handles each chat. Max changes the same ones when asked ("pause whatsapp",
+   "I'll handle Nuha"), on a call or in chat. */
+let wa = null;   // fetched when the page opens: { enabled, autoSend, unsavedOnly, selfTest, chats }
+const WA_SWITCHES = [
+  ['enabled', 'Max reads WhatsApp', 'Off pauses the extension: no chat is read or answered.'],
+  ['autoSend', 'Auto-send', 'Max sends replies itself; off, each reply waits for your Send on Telegram.'],
+  ['unsavedOnly', 'Only unsaved numbers', 'Leave saved contacts (friends and family) alone.'],
+  ['selfTest', 'Test mode', 'Your own chat acts as a customer for messages starting with "test:".'],
+];
+const HANDLER = { max: '🤖 Max', me: '🙋 You', ask: '❔ Not decided' };
+function waView() {
+  if (!wa) {
+    window.max.wa().then((s) => { wa = s; if (view === 'whatsapp') render(); }, (e) => toast(e.message, true));
+    return '<h1>WhatsApp</h1><div class="sub">Loading…</div>';
+  }
+  const chats = [...(wa.chats || [])].sort((a, b) => a.chat.localeCompare(b.chat));
+  return `
+    <h1>WhatsApp</h1>
+    <div class="sub">What the WhatsApp extension does. You can also just tell Max: "pause WhatsApp", "I'll handle Nuha".</div>
+    <div class="panel wa-set">
+      ${WA_SWITCHES.map(([k, label, help]) => `
+        <button class="switch ${wa[k] ? 'on' : ''}" data-wa-set="${k}" role="switch" aria-checked="${!!wa[k]}">
+          <span class="knob"></span><span>${label}<small>${help}</small></span></button>`).join('')}
+    </div>
+    <div class="panel gap-above"><h2>Who handles each chat</h2>
+      ${chats.length ? `<ul class="hudlist">${chats.map((c) => `<li><span class="what">${esc(c.chat)}</span>
+        <span class="meta">${HANDLER[c.handler] || c.handler}</span>
+        <button class="hud" data-wa-chat="${esc(c.id)}" data-to="${c.handler === 'max' ? 'me' : 'max'}">${c.handler === 'max' ? "I'll handle it" : 'Hand to Max'}</button></li>`).join('')}</ul>`
+        : '<div class="empty">No chats yet.</div>'}
+    </div>`;
+}
+async function waChange(body) {
+  try { wa = await window.max.wa(body); if ('autoSend' in (body.set || {})) deskMode = wa.autoSend ? 'auto' : 'ask'; }
+  catch (err) { toast(err.message.replace(/^Error invoking remote method '\w+': (Error: )?/, ''), true); }
+  render();
+}
+
 /* ---------- Calendar ---------- */
 let calMonth = null;   // 'YYYY-MM' shown in the month grid
 let calDay = null;     // selected day 'YYYY-MM-DD'
@@ -536,7 +574,7 @@ async function saveSurvey(btn) {
 }
 
 /* ---------- Plumbing ---------- */
-const VIEWS = { inbox, chat: chatView, leads: leadsView, shield: shieldView, business: businessView, survey: surveyView, voice: voiceView };
+const VIEWS = { inbox, chat: chatView, leads: leadsView, shield: shieldView, business: businessView, survey: surveyView, voice: voiceView, whatsapp: waView };
 
 function render() {
   const main = $('#view');
@@ -550,7 +588,7 @@ function render() {
     main.dataset.page = page;
   }
   document.querySelectorAll('.rail button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
-  $('#setBtn')?.classList.toggle('active', ['shield', 'business', 'survey', 'voice'].includes(view));
+  $('#setBtn')?.classList.toggle('active', ['shield', 'business', 'survey', 'voice', 'whatsapp'].includes(view));
   const cal = $('#calPop');   // desktop only; left alone while you're typing an event into it
   if (cal && !document.activeElement?.matches('#calPop input')) cal.innerHTML = calBody();
   const n = (data?.leads || []).filter((l) => l.status === 'escalated').length;
@@ -563,7 +601,7 @@ function render() {
     if (!matchMedia('(pointer: coarse)').matches) $('#input')?.focus();   // no keyboard popping up on a phone
   }
 }
-function go(v) { view = v; render(); }
+function go(v) { if (v === 'whatsapp') wa = null; view = v; render(); }   // fresh: Max may have changed it on a call
 
 async function refresh(quiet = false) {
   try {
@@ -616,6 +654,8 @@ document.addEventListener('click', async (e) => {
     return;
   }
   if (t.id === 'send') return send($('#input').value);
+  if (t.closest('[data-wa-set]')) { const k = t.closest('[data-wa-set]').dataset.waSet; return waChange({ set: { [k]: !wa[k] } }); }
+  if (t.dataset.waChat) { t.disabled = true; return waChange({ chat: t.dataset.waChat, handler: t.dataset.to }); }
   if (t.closest('#deskMode')) {
     try {
       deskMode = await window.max.deskMode(deskMode === 'auto' ? 'ask' : 'auto');
