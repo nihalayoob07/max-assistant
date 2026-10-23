@@ -246,6 +246,10 @@ class CallActivity : Activity() {
     private fun missed(code: Int) {
         if (busy || isFinishing) return
         line("·", "didn't catch that (code $code)")
+        if (holding) {   // no reply to the small talk: give the answer if it's in, else try another question
+            if (answerReady != null) { deliver("Okay, here's what I've got."); return }
+            say(smallQuestion() ?: "Still on it, one second.") { listen() }; return
+        }
         if (talking && misses >= 1) { say("Okay, talk later. Bye.") { hangUp() }; return }
         if (++misses > 2) { status.text = "Tap Talk, or use the buttons"; return }
         say(if (talking) "Anything else? Just say it, or say bye." else "Sorry, I didn't hear you.") { listen() }
@@ -257,6 +261,7 @@ class CallActivity : Activity() {
     private fun heard(text: String) {
         misses = 0
         line("You", text)
+        if (holding) { chatBack(text); return }   // small talk while main Max works on the last question
         val p = pending
         if (p != null) {
             val numbers = text.any { it.isDigit() }
@@ -268,54 +273,96 @@ class CallActivity : Activity() {
             say("Okay. Bye.") { hangUp() }; return
         }
         status.text = "Thinking…"
-        // Small talk and common questions come back at once. A slower answer from main Max gets conversation while it
-        // works: a reply that fits what was asked, then a varied "still on it" now and then. The answer waits for the
-        // line being spoken to finish, so nothing is cut off mid-sentence.
-        val lines = keepTalking(text)
-        var next = 0
-        var answer: (() -> Unit)? = null
-        val chat = object : Runnable {
-            override fun run() {
-                if (!talking || next >= lines.size) return
-                say(lines[next++]) { answer?.let { answer = null; it() } }
-                handler.postDelayed(this, if (next == 1) 7_000 else 10_000)
-            }
+        // Small talk and common questions come back at once. For a slower answer from main Max, Max holds the call like
+        // a person would: a line that shows it understood (written by the fast model, /call/ack), then small talk that
+        // it listens to and reacts to, and the answer once it's in and the owner has finished speaking.
+        val t = ++turn
+        holding = false
+        answerReady = null
+        var ackLine: String? = null
+        thread {
+            ackLine = runCatching { JSONObject(Api.call(this, "POST", "/call/ack", JSONObject().put("text", text).toString(), 3_000)).optString("ack") }
+                .getOrNull()?.takeIf { it.isNotBlank() }
         }
-        handler.postDelayed(chat, 1_200)
+        val hold = Runnable {
+            if (t != turn || answerReady != null) return@Runnable
+            holding = true
+            say(listOfNotNull(ackLine ?: fallbackAck(text), smallQuestion()).joinToString(" ")) { listen() }
+        }
+        handler.postDelayed(hold, 1_500)
         thread {
             val r = runCatching { JSONObject(Api.call(this, "POST", "/call/answer", JSONObject().put("id", id).put("text", text).toString(), 240_000)) }
             runOnUiThread {
-                handler.removeCallbacks(chat)
-                val reply = {
-                    r.onSuccess { j ->
-                        pending = j.optJSONObject("decision")
-                        say(j.optString("say")) { listen() }
-                    }.onFailure { e -> say("I couldn't reach the server: ${e.message}") { listen() } }
-                    Unit
-                }
-                // A waiting line mid-sentence finishes first; one still loading (or stopped by Talk) just gives way.
-                val midLine = runCatching { player?.isPlaying == true }.getOrDefault(false) || tts?.isSpeaking == true
-                if (midLine) answer = reply else reply()
+                if (t != turn) return@runOnUiThread   // dropped ("never mind") or replaced by a newer question
+                handler.removeCallbacks(hold)
+                answerReady = r
+                if (!holding) deliver("")   // otherwise it comes after they answer the small talk (chatBack / missed)
             }
         }
     }
 
-    /** What Max says while main Max works on an answer: first something that fits what was asked, then "still on it"
-     *  lines that don't repeat. Statements only, since Max isn't listening while it waits. */
-    private fun keepTalking(said: String): List<String> {
+    // ---------- holding the call while main Max works ----------
+    private var turn = 0                                 // bumped by each question; an answer for an old one is dropped
+    private var holding = false                          // Max is making small talk while it waits
+    private var answerReady: Result<JSONObject>? = null  // the answer, once it's in
+    private val askedSmall = mutableListOf<String>()     // small-talk questions already asked on this call
+
+    /** The answer, led by a short bridge from the small talk ("Nice, glad to hear it. Okay, got it."). */
+    private fun deliver(lead: String) {
+        val r = answerReady ?: return
+        answerReady = null
+        holding = false
+        r.onSuccess { j ->
+            pending = j.optJSONObject("decision")
+            say(listOf(lead, j.optString("say")).filter { it.isNotBlank() }.joinToString(" ")) { listen() }
+        }.onFailure { e -> say("$lead I couldn't reach the server: ${e.message}".trim()) { listen() } }
+    }
+
+    /** What the owner said during the small talk: react like a person, then either give the answer or chat a bit more. */
+    private fun chatBack(said: String) {
+        val t = " ${said.lowercase(Locale.US)} "
+        fun has(vararg w: String) = w.any { t.contains(" $it") }
+        if (has("never mind", "nevermind", "cancel", "forget it", "forget that", "drop it")) {
+            turn++; holding = false; answerReady = null
+            say("Okay, dropping that. Anything else?") { listen() }; return
+        }
+        if (has("bye", "that's all", "gotta go", "got to go")) { say("Okay. Bye.") { hangUp() }; return }
+        val reaction = when {
+            has("bad", "tired", "rough", "stress", "busy", "hectic", "long day", "not great", "not good", "meh", "sick", "exhausted", "sleepy", "terrible") ->
+                listOf("Ah, sounds like a long one.", "Oof, hang in there.", "Sorry to hear that. Hopefully this helps.").random()
+            has("good", "great", "nice", "fine", "awesome", "amazing", "chill", "relaxed", "productive", "well", "yes", "yeah", "yep", "done", "had") ->
+                listOf("Nice, glad to hear it.", "Love that.", "Good stuff.").random()
+            has("no", "not yet", "nope", "nah", "haven't") -> listOf("Ah, okay. Don't forget to eat something.", "Fair enough.").random()
+            else -> listOf("Ha, fair enough.", "Makes sense.", "Got it.").random()
+        }
+        if (answerReady != null) { deliver("$reaction Okay, here's what I've got."); return }
+        val next = smallQuestion()
+        say(if (next != null) "$reaction $next" else "$reaction Give me one more second.") { listen() }
+    }
+
+    /** Small talk that suits the time of day, never the same question twice on a call. */
+    private fun smallQuestion(): String? {
+        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val day = when { h < 12 -> "How did you sleep?"; h < 17 -> "How's the day going so far?"; else -> "How was your day?" }
+        val meal = when (h) { in 5..10 -> "Had breakfast yet?"; in 11..15 -> "Had lunch yet?"; in 18..22 -> "Had dinner yet?"; else -> null }
+        val rest = listOf("Busy at the shop today?", "Got anything fun planned for the weekend?", "Getting any rest today?",
+            "What have you been up to?", "Any good news today?").shuffled()
+        val q = (listOfNotNull(day, meal) + rest).firstOrNull { it !in askedSmall } ?: return null
+        askedSmall += q
+        return q
+    }
+
+    /** If the fast model's line is slow or missing: a plain one that fits the kind of request. */
+    private fun fallbackAck(said: String): String {
         val t = said.lowercase(Locale.US)
         fun has(vararg w: String) = w.any { t.contains(it) }
-        val first = when {
-            has("calendar", "schedule", "meeting", "free on", "busy on", "appointment") -> "Let me look at your calendar."
-            has("lead", "deal", "client", "customer", "order", "quote", "invoice", "payment") -> "Let me check on that for you."
-            has("open", "play", "youtube", "laptop", "server", "computer", "screen", "volume") -> "On it."
-            has("search", "find", "look up", "look into", "research", "who is", "what is", "how do", "why") -> "Good question. Let me look that up."
-            has("remind", "add", "note", "save", "remember", "todo", "to do") -> "Sure, noting that down."
-            else -> listOf("Sure, give me a second.", "Okay, let me think about that.", "Got it, one sec.").random()
+        return when {
+            has("calendar", "schedule", "meeting", "appointment") -> "Let me look at your calendar."
+            has("lead", "deal", "client", "customer", "order", "quote", "invoice", "payment") -> "Let me check on that."
+            has("open ", "play ", "youtube", "laptop", "volume") -> "On it."
+            has("remind", "remember", "note that", "add ") -> "Sure, noting that down."
+            else -> "Okay, give me a second on that."
         }
-        val more = listOf("Still working on it.", "Pulling it together now.", "Bear with me, nearly there.", "Almost there, thanks for waiting.",
-            "This one's taking a little longer. Hang on.").shuffled()
-        return listOf(first) + more
     }
 
     /** The confirmed decision goes to the same owner path as the desktop card and Telegram's buttons. */
