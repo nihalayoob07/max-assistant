@@ -32,6 +32,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.Locale
@@ -317,6 +318,7 @@ class CallActivity : Activity() {
     private var chatMisses = 0
     private val askedSmall = mutableListOf<String>()     // small-talk questions already asked on this call
     private var lastSmall = ""                           // the one just asked, so the reaction fits it
+    private val smallTalk = mutableListOf<JSONObject>()  // this small-talk thread, for the fast model's next line
     private var holdOn = Runnable {}
     private var askSmall = Runnable {}
 
@@ -331,7 +333,10 @@ class CallActivity : Activity() {
             stage = CHATTING
             chatted = true
             chatMisses = 0
-            say(q) { listen() }
+            val opener = "${listOf("By the way,", "Also,", "Just wondering,", "Oh, by the way,").random()} ${q.replaceFirstChar { it.lowercase() }}"
+            smallTalk.clear()
+            smallTalk += JSONObject().put("role", "assistant").put("content", opener)
+            say(opener) { listen() }
         }
         handler.postDelayed(askSmall, 2_500)
     }
@@ -372,9 +377,29 @@ class CallActivity : Activity() {
             else -> Triple("Nice, glad to hear it.", "Ah, okay.", "Ha, fair enough.")
         }
         val reaction = when { bad -> listOf("Oof, sounds like a long one.", "Sorry to hear that.", "Ah, hang in there.").random(); good -> yes; no -> nope; else -> meh }
-        if (answerReady != null) { deliver("$reaction Anyway, here's what I've got."); return }
-        stage = ACKING   // speaking the reaction; afterLine then answers or pauses before anything else
-        say(reaction) { afterLine(turn) }
+        // The rest of the chat comes from the fast model (/call/chat): a reaction and a follow-up on the same topic,
+        // or, once the answer is in, just a reaction. The lines above are the fallback if it's slow or fails.
+        smallTalk += JSONObject().put("role", "user").put("content", said)
+        val t0 = turn
+        stage = ACKING   // thinking of a reply; nothing listens until Max has said it
+        thread {
+            val ready = answerReady != null
+            val line = runCatching {
+                JSONObject(Api.call(this, "POST", "/call/chat", JSONObject().put("history", JSONArray(smallTalk)).put("ready", ready).toString(), 4_000))
+                    .optString("line")
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+            runOnUiThread {
+                if (t0 != turn) return@runOnUiThread
+                if (answerReady != null) {   // the answer's in: a reaction (no question), then the answer
+                    deliver("${if (ready && line != null) line else reaction} Anyway, here's what I've got."); return@runOnUiThread
+                }
+                if (line == null) { say(reaction) { afterLine(turn) }; return@runOnUiThread }
+                smallTalk += JSONObject().put("role", "assistant").put("content", line)
+                stage = CHATTING
+                chatMisses = 0
+                say(line) { listen() }
+            }
+        }
     }
 
     /** Small talk that suits the time of day, never the same question twice on a call. */
