@@ -305,6 +305,9 @@ def agree(lid, st, price, owner_set):
     st["pts"], st["step"], st["holds"], st["agreed"] = [int(price)], 0, 0, int(price)
     sh(INVOICE, "quote", lid, "--send")
     sh(LEAD, "update", lid, "next", "+7d")
+    if not owner_set:   # closed without the owner: the phone API rings him with the news (phone/phone-api.js watch)
+        with open(f"{B}/closed_by_max.tsv", "a") as f:
+            f.write(f"{lid}\t{time.strftime('%Y-%m-%d %H:%M')}\t{st.get('product', '')}\t{st.get('qty', 1)}\t{int(price)}\n")
     return True
 
 
