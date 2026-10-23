@@ -268,10 +268,13 @@ class CallActivity : Activity() {
             say("Okay. Bye.") { hangUp() }; return
         }
         status.text = "Thinking…"
-        if (talking) say("One moment.")   // Max may take a while: the answer comes from main Max
+        // Small talk and common questions come back at once; only a slower answer from main Max gets "One moment." first.
+        val stall = Runnable { if (talking) say("One moment.") }
+        handler.postDelayed(stall, 1200)
         thread {
             val r = runCatching { JSONObject(Api.call(this, "POST", "/call/answer", JSONObject().put("id", id).put("text", text).toString(), 240_000)) }
             runOnUiThread {
+                handler.removeCallbacks(stall)
                 r.onSuccess { j ->
                     pending = j.optJSONObject("decision")
                     say(j.optString("say")) { listen() }
