@@ -42,6 +42,7 @@
   const isSelf = (title) => /\(\s*you\s*\)\s*$/i.test(title || '') || (!!title && chatKey(title) === chatKey(chatTitle()) && selfHeader());
   function eligible(title, s) {
     if (!title) return false;
+    if ((s.ignored || []).some((k) => chatKey(k) === chatKey(title))) return false;   // the owner is handling it
     if (isSelf(title)) return !!s.selfTest;   // own chat only in test mode, and only for "test:" messages
     return s.unsavedOnly ? isPhone(title) : true;
   }
@@ -224,6 +225,7 @@
         const row = chatRows().find((r) => r.contains(badge));
         const title = firstLine(row);
         if (!title) { note('found an unread chat but not its name (WhatsApp layout changed?)'); continue; }
+        if ((s.ignored || []).some((k) => chatKey(k) === chatKey(title))) continue;   // the owner's; not even a note
         if (!eligible(title, s)) { note(`${title}: skipped (saved contact or own chat; untick "Only unsaved numbers" to include)`); continue; }
         if (pending.has(title)) continue;
         if (await openChat(title)) { await considerOpenChat(s); return; }

@@ -293,7 +293,9 @@ http.createServer((req, res) => {
     if (TOKEN) {   // only what the owner approved; these are sent, not just pasted
       const items = Object.entries(drafts).filter(([, d]) => d.state === 'approved')
         .map(([id, d]) => ({ id, chat: d.chat, contact: d.contact, reply: d.reply, send: true }));
-      return send(res, 200, { items });
+      // chats the owner is handling: the extension never opens or reads them until handed back to Max
+      const ignored = [...new Set(Object.entries(chats).filter(([, c]) => c.handler === 'me').flatMap(([k, c]) => [k, c.chat]))];
+      return send(res, 200, { items, ignored });
     }
     return desk({}, '--outbox').then((r) => send(res, 200, r), (e) => send(res, 502, { error: e.message }));
   }

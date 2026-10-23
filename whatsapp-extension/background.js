@@ -11,6 +11,7 @@ const DEFAULTS = {
   token: '',
   ownerName: '',            // a reply that names the owner is never put in the chat
   businessNumber: '',       // the number customers write to (set in max.config / the popup)
+  ignored: [],              // chats the owner is handling (from the relay): never opened or read
   approval: 'paste',        // 'paste' = into the chat for the owner to send (laptop); 'telegram' = a draft to
                             // approve on Telegram, sent from here once approved (server, desk/max-wa.sh)
 };
@@ -61,7 +62,11 @@ async function pollOutbox(tabId) {
   const base = s.apiUrl.replace(/\/+$/, '');
   const headers = { 'Content-Type': 'application/json', 'X-Desk-Key': s.token };
   let items = [];
-  try { items = (await (await fetch(`${base}/outbox`, { headers })).json()).items || []; } catch { return; }
+  try {
+    const r = await (await fetch(`${base}/outbox`, { headers })).json();
+    items = r.items || [];
+    if (Array.isArray(r.ignored)) await chrome.storage.local.set({ ignored: r.ignored });
+  } catch { return; }
   const { chats = {} } = await chrome.storage.local.get('chats');
   const done = (id) => fetch(`${base}/outbox/done`, { method: 'POST', headers, body: JSON.stringify({ id }) }).catch(() => {});
   for (const it of items) {
