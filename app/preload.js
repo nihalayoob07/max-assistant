@@ -1,5 +1,5 @@
 'use strict';
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('max', {
   connect: () => ipcRenderer.invoke('connect'),
@@ -31,4 +31,13 @@ contextBridge.exposeInMainWorld('max', {
   wa: (body) => ipcRenderer.invoke('wa', body),
   voiceSpeed: (set) => ipcRenderer.invoke('voiceSpeed', set),
   win: (what) => ipcRenderer.send('win', what),
+  onTuck: (cb) => ipcRenderer.on('tuck', () => cb()),
+  // The code tutor (ui/tutor.js)
+  onTutor: (cb) => ipcRenderer.on('tutor', (_e, job) => cb(job)),
+  tutorAsk: (id, messages) => ipcRenderer.invoke('tutorAsk', id, messages),
+  tutorState: (waiting) => ipcRenderer.send('tutorState', waiting),
+  tutorSave: (fix) => ipcRenderer.invoke('tutorSave', fix),
+  tutorRead: (p) => ipcRenderer.invoke('tutorRead', p),
+  tutorWin: (what) => ipcRenderer.invoke('tutorWin', what),
+  filePath: (file) => webUtils.getPathForFile(file),
 });

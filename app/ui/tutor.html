@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:">
+  <title>Max · Code</title>
+  <link rel="stylesheet" href="../node_modules/@fontsource/rajdhani/500.css">
+  <link rel="stylesheet" href="../node_modules/@fontsource/rajdhani/600.css">
+  <link rel="stylesheet" href="../node_modules/@fontsource/rajdhani/700.css">
+  <link rel="stylesheet" href="../node_modules/@fontsource/jetbrains-mono/400.css">
+  <link rel="stylesheet" href="tutor.css">
+</head>
+<body>
+  <header class="bar">
+    <span class="brand">MAX</span>
+    <span class="what" id="what">Code</span>
+    <span class="spacer"></span>
+    <button class="chip" id="simple" hidden>Simpler</button>
+    <button class="chip" id="trace" hidden>Line by line</button>
+    <button class="icon on" id="pin" title="Keep on top" aria-label="Keep on top">
+      <svg viewBox="0 0 24 24"><path d="M15 4.5 19.5 9l-4 1.5-3 3 .5 4.5L5 10.5l4.5.5 3-3z"/><path d="M9 15l-4.5 4.5"/></svg>
+    </button>
+    <button class="icon" id="mute" title="Mute Max" aria-label="Mute Max">
+      <svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/><path class="cross" d="M16 9.5l5 5m0-5l-5 5"/></svg>
+    </button>
+    <button class="icon x" id="close" title="Close" aria-label="Close">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </header>
+  <nav class="tabs" id="tabs" hidden></nav>
+  <div class="task" id="task" hidden></div>
+  <div class="busy" id="busy" hidden><i></i><span></span></div>
+  <main class="code" id="code"></main>
+  <footer class="foot">
+    <input id="q" placeholder="Ask Max about this code" autocomplete="off" spellcheck="false">
+    <button class="btn" id="hint" hidden>Hint</button>
+    <button class="btn p" id="check" hidden>Check answer</button>
+  </footer>
+
+  <div class="drop" id="drop" hidden>
+    <div class="dropbox" id="dropbox">
+      <div class="drop-title" id="dropTitle">Drop the file here, or paste the program</div>
+      <textarea id="paste" spellcheck="false" placeholder="Paste code here"></textarea>
+      <div class="acts">
+        <button class="btn" id="dropCancel">Cancel</button>
+        <button class="btn" id="dropDebug">Debug it</button>
+        <button class="btn p" id="dropExplain">Explain it</button>
+      </div>
+    </div>
+  </div>
+  <script src="hl.js"></script>
+  <script src="tutor.js"></script>
+</body>
+</html>

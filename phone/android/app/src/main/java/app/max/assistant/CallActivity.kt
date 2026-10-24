@@ -151,7 +151,7 @@ class CallActivity : Activity() {
         say(deal?.optString("say") ?: "") { listen() }
     }
 
-    /** Max's desktop voice is a British man (Kokoro "George"): the closest the phone has is an en-GB male voice. */
+    /** Only used when the server can't make the ElevenLabs voice: the phone's closest is an en-GB male voice. */
     private fun pickVoice(t: TextToSpeech) {
         val gb = runCatching { t.voices }.getOrNull().orEmpty().filter { it.locale.language == "en" && it.locale.country == "GB" && !it.isNetworkConnectionRequired }
         val male = listOf("rjs", "gbd", "gbb").firstNotNullOfOrNull { n -> gb.find { it.name.contains("-x-$n") } }

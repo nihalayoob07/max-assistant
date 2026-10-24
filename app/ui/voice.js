@@ -134,6 +134,7 @@ async function setMini(on) {
   }, from);
 }
 window.max.onExpand(() => setMini(false));   // the dashboard's core or the tray asked for the full view
+window.max.onTuck(() => setMini(true));       // the code tutor opened: its window takes the stage
 // Proactive Max: a nudge from main.js. Wait if Max is busy talking or working; otherwise grow, say it, and
 // listen for the answer. It goes into the conversation, so "yes, do it" makes sense to Max.
 window.max.onAnnounce(function announce(text) {
@@ -228,6 +229,14 @@ async function ask(text) {
   }
   if (current !== id) return;   // cancelled by a click while working
   reply = reply.trim() || "I didn't get an answer from the server. Try again in a moment.";
+  if (reply.startsWith('⁣')) {   // handled on the code tutor's window, which does the talking
+    reply = reply.slice(1);
+    history.push({ role: 'assistant', content: reply });
+    asking = false;
+    stopAsides();
+    $('#reply').textContent = pendingReply = reply;
+    return listen();
+  }
   pendingReply = reply;
   history.push({ role: 'assistant', content: reply });
   window.max.appendChat({ role: 'assistant', content: reply });
@@ -237,14 +246,6 @@ async function ask(text) {
 }
 
 /* ---------- Speaking ---------- */
-let voice = null;
-function pickVoice() {
-  const vs = speechSynthesis.getVoices();
-  const prefer = [/George|Ryan|Thomas/i, /Mark|Guy|David/i, /en-GB/i, /en-/i];
-  for (const p of prefer) { voice = vs.find((v) => p.test(v.name) || p.test(v.lang)); if (voice) return; }
-}
-speechSynthesis.onvoiceschanged = pickVoice; pickVoice();
-
 // How names should sound: fixed here, so it never depends on Max remembering.
 const PRONOUNCE = {};   // names the voice says wrong, e.g. { Siobhan: 'Shivawn' }: yours from SAY_NAME in max.config
 window.max.cfg?.().then((c) => { const n = c.owner.split(' ')[0]; if (n && c.sayName) PRONOUNCE[n] = c.sayName; }).catch(() => {});
@@ -270,12 +271,12 @@ const speakable = (t) => t
   .replace(/[*_#`>|~\[\]{}]/g, '')
   .replace(/\p{Extended_Pictographic}/gu, '')
   .replace(/\bL0*(\d+)\b/g, 'lead $1')
-  // Money, dates, times and numbers as words (ui/speech.js): Kokoro reads 4-digit numbers as years.
+  // Money, dates, times and numbers as words, Indian style (ui/speech.js).
   .replace(/[\s\S]+/, (s) => window.spokenNumbers(s))
   .replace(/\s{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1').trim();
 
-// Neural voice (Kokoro, generated locally in the main process): sentences arrive as audio chunks and
-// play back to back. The core's level ring follows the voice. Windows' built-in voice is the fallback.
+// Max's voice (ElevenLabs, fetched by the main process): the answer arrives as audio chunks that play back to
+// back. The core's level ring follows the voice.
 let out = null, analyser = null, playId = null, playing = [], nextAt = 0, gotLast = false, meter = 0;
 function player() {
   if (out) return;
@@ -319,7 +320,6 @@ function stopSpeaking() {
   playId = null;
   playing.forEach((s) => { try { s.stop(); } catch {} });
   playing = [];
-  speechSynthesis.cancel();
 }
 
 /* ---------- Small talk while Max works ----------
@@ -398,12 +398,8 @@ async function speak(text) {
     await window.max.speak(playId, sayNames(speakable(text)));
     if (!gotLast && !playing.length && mode === 'preparing') { $('#reply').textContent = pendingReply; listen(); }   // nothing to say
   } catch {
-    // Neural voice unavailable: fall back to Windows' built-in voice.
-    startSpeaking();
-    const u = new SpeechSynthesisUtterance(sayNames(speakable(text)));
-    if (voice) u.voice = voice;
-    u.onend = u.onerror = () => { if (mode === 'speaking') listen(); };
-    speechSynthesis.speak(u);
+    // No voice (ElevenLabs unreachable or out of credits): the answer still shows.
+    if (mode === 'preparing') { $('#reply').textContent = pendingReply; listen(); }
   }
 }
 

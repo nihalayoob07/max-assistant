@@ -28,11 +28,10 @@ function serverConfig() {
   return cfgReady;
 }
 const owner = () => (CFG.OWNER_NAME || '').split(' ')[0];
-// Speech models get a share of the CPU sized to this machine, so a 4-core laptop isn't swamped and a
-// 16-core one isn't wasted: Whisper 2-4 threads, the voice 2-8.
+// Whisper gets a share of the CPU sized to this machine (2-4 threads), so a 4-core laptop isn't swamped and a
+// 16-core one isn't wasted.
 const CORES = require('os').availableParallelism?.() || require('os').cpus().length;
-const clampThreads = (n, lo, hi) => Math.max(lo, Math.min(hi, Math.floor(n)));
-const WHISPER_THREADS = clampThreads(CORES / 4, 2, 4), VOICE_THREADS = clampThreads(CORES / 2, 2, 8);
+const WHISPER_THREADS = Math.max(2, Math.min(4, Math.floor(CORES / 4)));
 const PORT = 18642;   // shared with the WhatsApp extension's tunnel: if one is already open, reuse it
 const API = `http://127.0.0.1:${PORT}`;
 let token = '';
@@ -222,9 +221,12 @@ async function deskRelay(method, p, body) {
 }
 ipcMain.handle('wa', (_e, body) => (body ? deskRelay('POST', '/wa', body) : deskRelay('GET', '/wa')));
 async function quickAction(messages) {
+  const last = messages.filter((m) => m.role === 'user').pop();
+  // The code tutor's own commands ("next", "fix error 2", "yes" to a fix it offered) come first while it's open.
+  const tc = tutorOpen() ? tutorCode.command(String(last?.content || '').replace(/^🎙\s*/, ''), tutorWaiting) : null;
+  if (tc && tc.cmd !== 'ask') return tutorCommand(tc);
   const quick = quickReply(messages);
   if (quick) return quick;
-  const last = messages.filter((m) => m.role === 'user').pop();
   const wa = instant.waCommand(last?.content);   // "pause whatsapp", "I'll handle Nuha"... (see quick.js)
   if (wa) { const said = await instant.waApply(wa, deskRelay).catch((e) => `I couldn't change WhatsApp: ${e.message}.`); if (said) return said; }
   const want = instant.intent(last?.content);
@@ -236,6 +238,8 @@ async function quickAction(messages) {
   }
   // A misheard name at the start ("Matt, open Zen") is still Max: drop it so the commands match.
   const said = String(last?.content || '').replace(/^🎙\s*/, '').replace(new RegExp(`^\\W*((hey|hi|ok|okay|yo)\\W+)?${NAME}\\b\\W*`, 'i'), '');
+  const job = tutorCode.intent(said);   // "how do I write a while loop", "debug my code", "explain this file"
+  if (job) return startTutor(job);
   const pcCmd = pcCommands.parse(said);
   if (pcCmd) {
     const showDashboard = () => { if (!win) createMainWindow(); win.show(); win.focus(); };
@@ -243,7 +247,7 @@ async function quickAction(messages) {
     try { return await pcCommands.run(pcCmd, { hands: laptopHands, sandbox, notify, showDashboard }); } catch (e) { return `That didn't work: ${e.message}`; }
   }
   const cmd = youtube.parse(said);
-  if (!cmd) return null;
+  if (!cmd) return tc ? tutorCommand(tc) : null;   // a question about the code on the tutor's screen
   try { return await youtube.run(cmd, { hands: laptopHands, sandbox }); } catch (e) { return `That didn't work: ${e.message}`; }
 }
 
@@ -305,6 +309,68 @@ async function streamChat(sender, id, messages, cancel) {
   return text;
 }
 
+// ---------- The code tutor and debugger (tutor.js, ui/tutor.*) ----------
+// Its own window beside the hologram, which tucks into its corner. Max is asked through the same API, without
+// the quick answers; the page turns Max's JSON into the lesson, the arrow, the editable part and the fixes.
+const tutorCode = require('./tutor');
+let tutorWin = null, tutorReady = null, tutorWaiting = null;   // waiting: what the tutor just asked ('fix', 'practice')
+const tutorOpen = () => !!tutorWin && !tutorWin.isDestroyed();
+const QUIET = '⁣';   // a reply starting with this is shown, not spoken: the tutor is doing the talking
+function showTutor(job) {
+  if (!tutorOpen()) {
+    const a = screen.getPrimaryDisplay().workArea;
+    const width = Math.min(980, a.width - 80), height = Math.min(760, a.height - 60);
+    tutorWin = new BrowserWindow({
+      width, height, x: a.x + a.width - width - 40, y: a.y + Math.round((a.height - height) / 2), minWidth: 560, minHeight: 420,
+      frame: false, backgroundColor: '#0a0a0a', title: 'Max · Code', icon: path.join(__dirname, 'assets', 'icon.png'), alwaysOnTop: true, show: false,
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+    });
+    tutorWin.loadFile(path.join(__dirname, 'ui', 'tutor.html'));
+    tutorReady = new Promise((r) => tutorWin.webContents.once('did-finish-load', r));
+    tutorWin.on('closed', () => { tutorWin = null; tutorWaiting = null; });
+  }
+  const w = tutorWin;
+  tutorReady.then(() => {
+    if (w.isDestroyed()) return;
+    w.webContents.send('tutor', job);
+    if (!w.isVisible()) w.show();
+    w.focus();
+  });
+  if (overlay && !overlay.isDestroyed()) overlay.webContents.send('tuck');
+}
+async function startTutor(job) {
+  if (job.kind === 'learn') { showTutor(job); return "Sure, I'll put an example up."; }
+  if (job.kind === 'explain') { showTutor({ kind: 'drop', then: 'explain' }); return 'Drop the file on the code window, or paste the program in.'; }
+  const code = await tutorCode.editorCode().catch((e) => { launchLog(`tutor: reading the editor failed: ${e.message}`); return null; });
+  if (!code) {
+    showTutor({ kind: 'drop', then: 'debug', note: "I can't see a code file open in your editor. Drop it here, or paste the program" });
+    return "I can't see your code in an editor, so drop the file on the code window or paste it in.";
+  }
+  tutorCode.allow(code.files);
+  showTutor({ kind: 'debug', ...code });
+  return `Reading ${code.files[0].name} from ${code.editor}${code.files.length > 1 ? `, with ${code.files.length - 1} file${code.files.length > 2 ? 's' : ''} beside it` : ''}.`;
+}
+function tutorCommand(tc) {
+  if (tc.cmd === 'close') { tutorWin.close(); return 'Closed the code window.'; }
+  tutorWin.webContents.send('tutor', { kind: 'cmd', ...tc });
+  return QUIET + ({ fix: `Showing the fix for number ${tc.n}.`, yes: 'On it.', no: 'Okay.', ask: 'Answering on the code window.', mute: 'Muted.' }[tc.cmd] || 'Done, on the code window.');
+}
+ipcMain.handle('tutorAsk', async (e, id, messages) => {
+  await connect();
+  const ctrl = new AbortController();
+  inflightChats.set(id, ctrl);
+  try { return await streamChat(e.sender, id, messages, ctrl.signal); } finally { inflightChats.delete(id); }
+});
+ipcMain.on('tutorState', (_e, waiting) => { tutorWaiting = waiting || null; });
+ipcMain.handle('tutorSave', (_e, fix) => tutorCode.applyFix(fix));
+ipcMain.handle('tutorRead', (_e, p) => tutorCode.readDropped(String(p || '')));
+ipcMain.handle('tutorWin', (_e, what) => {
+  if (!tutorOpen()) return false;
+  if (what === 'close') tutorWin.close();
+  else if (what === 'pin') tutorWin.setAlwaysOnTop(!tutorWin.isAlwaysOnTop());
+  return tutorOpen() && tutorWin.isAlwaysOnTop();
+});
+
 // Speech-to-text runs here on the laptop (Whisper base.en, ~80 MB, cached after the first run), so
 // the owner's voice never leaves the machine. Loaded once, in the background, at startup.
 let asrP = null;
@@ -350,34 +416,8 @@ function fixNames(text) {
   });
 }
 
-// Text-to-speech also runs locally: Kokoro (82M, neural), British "George" voice. A reply is spoken
-// sentence by sentence: each sentence is sent to the window as soon as it's generated, so playback
-// starts ~3 s after the answer while the rest is still being made.
-const VOICE = process.env.MAX_VOICE || 'bm_george';
-// Built from its parts (through kokoro-js's own copy of transformers, so its tensors match) to turn off the
-// memory arena and cap threads: ~190 MB less, about as fast (measured). Unloaded after 10 idle minutes.
-let ttsP = null, ttsUsed = 0;
-function tts() {
-  ttsUsed = Date.now();
-  ttsP ||= (async () => {
-    const { KokoroTTS } = await import('kokoro-js');
-    const T = await import(require('url').pathToFileURL(path.join(path.dirname(require.resolve('kokoro-js')), '..', 'node_modules', '@huggingface', 'transformers', 'dist', 'transformers.node.mjs')).href);
-    T.env.cacheDir = path.join(app.getPath('userData'), 'models');
-    const id = 'onnx-community/Kokoro-82M-v1.0-ONNX';
-    const model = await T.StyleTextToSpeech2Model.from_pretrained(id,
-      { dtype: 'q8', device: 'cpu', session_options: { intraOpNumThreads: VOICE_THREADS, interOpNumThreads: 1, enableCpuMemArena: false } });
-    return new KokoroTTS(model, await T.AutoTokenizer.from_pretrained(id));
-  })();
-  return ttsP;
-}
-setInterval(async () => {
-  if (!ttsP || Date.now() - ttsUsed < 10 * 60000) return;
-  const p = ttsP; ttsP = null;
-  (await p.catch(() => null))?.model?.dispose?.();
-}, 60000);
-// The ElevenLabs voice, when max.config on the server has ELEVENLABS_API_KEY (read with the rest of CFG). The text
-// Max says goes to ElevenLabs to be spoken; Kokoro above stays the fallback (no key, offline, out of credits).
-// Raw 24 kHz PCM comes back, turned into the same float samples Kokoro gives, so voice mode plays both alike.
+// Max's voice is ElevenLabs, everywhere: ELEVENLABS_API_KEY in max.config on the server (read with the rest of CFG).
+// The text Max says goes to ElevenLabs; raw 24 kHz PCM comes back as float samples for the window to play.
 let eleven = null;
 // How fast the voice talks (0.7 to 1.2), set in either app's Settings. It lives on the server next to the phone API
 // (~/.config/max-phone/voice-speed), so calls and the desktop always agree. Read once, then kept here.
@@ -407,8 +447,8 @@ async function elevenSpeech(text) {
 
 const cancelled = new Set();
 async function speak(sender, id, text) {
-  await serverConfig().catch(() => {});   // the key lives in the server's max.config; offline, Kokoro speaks
-  let useEleven = !!CFG.ELEVENLABS_API_KEY;
+  await serverConfig().catch(() => {});   // the key lives in the server's max.config
+  if (!CFG.ELEVENLABS_API_KEY) throw new Error('no ElevenLabs key in max.config');
   // Whole answer in one go: per-sentence generation made Max stop and start, because each piece took
   // about as long to make as to say, and lost the flow between sentences. Only long answers are split,
   // into ~350-character paragraphs at sentence ends.
@@ -419,9 +459,7 @@ async function speak(sender, id, text) {
   }
   for (let i = 0; i < chunks.length; i++) {
     if (cancelled.has(id) || sender.isDestroyed()) break;
-    let out = null;
-    if (useEleven) out = await elevenSpeech(chunks[i].trim()).catch((e) => { console.error('ElevenLabs:', e.message); useEleven = false; return null; });
-    out ||= await (await tts()).generate(chunks[i].trim(), { voice: VOICE });
+    const out = await elevenSpeech(chunks[i].trim());
     if (cancelled.has(id) || sender.isDestroyed()) break;
     sender.send('tts', { id, rate: out.sampling_rate, pcm: out.audio.buffer.slice(0), last: i === chunks.length - 1 });
   }
@@ -821,10 +859,14 @@ app.on('second-instance', () => { if (!win) createMainWindow(); win.show(); win.
 if (process.env.MAX_SMOKE) app.whenReady().then(async () => {
   const out = [];
   try {
-    // Load both together, voice first, like startup does: the order once broke a shared native library.
-    const [t] = await Promise.all([tts(), asr()]);
     out.push('whisper: ' + JSON.stringify(await transcribe(new Float32Array(16000).buffer)));
-    out.push('voice: ' + (await t.generate('Max is ready.', { voice: VOICE })).audio.length + ' samples');
+    await serverConfig();
+    out.push('voice: ' + (await elevenSpeech('Max is ready.')).audio.length + ' samples (ElevenLabs)');
+    // The code tutor's page must load with its syntax colours working.
+    const tw = new BrowserWindow({ width: 900, height: 640, show: false, webPreferences: { offscreen: true, preload: path.join(__dirname, 'preload.js'), contextIsolation: true } });
+    tw.loadFile(path.join(__dirname, 'ui', 'tutor.html'));
+    await new Promise((r) => tw.webContents.once('did-finish-load', r));
+    out.push('tutor: ' + await tw.webContents.executeJavaScript(`hl('int x = 1;', 'c').join('').includes('class="k"') && !!document.querySelector('#code') ? 'ok' : 'BROKEN'`));
     // The hologram page must load and reach its corner layout (a script loop once froze it, leaving only the
     // footer text on screen).
     const h = new BrowserWindow({ width: 620, height: 280, show: false, webPreferences: { offscreen: true, preload: path.join(__dirname, 'preload.js'), contextIsolation: true } });
@@ -832,6 +874,18 @@ if (process.env.MAX_SMOKE) app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 2500));
     out.push('hologram: ' + await Promise.race([h.webContents.executeJavaScript('document.body.className'),
       new Promise((r) => setTimeout(() => r('FROZEN'), 3000))]));
+    // MAX_TUTOR_TEST="how do I write a while loop in C|next|debug my code|fix number 1|yes": each line goes through
+    // the same path as speech, then the tutor window is screenshotted (tutor-N.png next to the smoke file).
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (const [i, q] of (process.env.MAX_TUTOR_TEST || '').split('|').filter(Boolean).entries()) {
+      out.push(`tutor "${q}" -> ${await quickAction([{ role: 'user', content: q }])}`);
+      await wait(2000);
+      for (let s = 0; s < 240 && tutorOpen() && await tutorWin.webContents.executeJavaScript(`!document.querySelector('#busy').hidden`); s++) await wait(1000);
+      await wait(1500);
+      if (!tutorOpen()) continue;
+      out.push('  ' + await tutorWin.webContents.executeJavaScript(`[document.querySelector('#what').textContent, document.querySelector('#task').textContent, document.querySelector('.note')?.textContent].filter(Boolean).join(' | ')`));
+      fs.writeFileSync(path.join(path.dirname(process.env.MAX_SMOKE), `tutor-${i + 1}.png`), (await tutorWin.webContents.capturePage()).toPNG());
+    }
   } catch (e) { out.push('FAILED: ' + e.stack); }
   fs.writeFileSync(process.env.MAX_SMOKE, out.join('\n') + '\n');
   app.exit(0);
@@ -860,7 +914,7 @@ else app.whenReady().then(async () => {
   ]));
   // Voice from anywhere: Ctrl+Shift+Space opens the hologram. Whisper warms up in the background.
   globalShortcut.register('Control+Shift+Space', openVoice);
-  setTimeout(() => { asr().catch(() => {}); tts().catch(() => {}); }, 3000);   // warm the voice models
+  setTimeout(() => asr().catch(() => {}), 3000);   // warm up Whisper
   if (!process.env.MAX_SHOT) {
     startHands();
     startWake();

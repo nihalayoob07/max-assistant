@@ -26,8 +26,8 @@ SAY_NAME=""
 SITES=""
 # Names the speech recogniser mishears: Right Name=heard as|heard as; next, e.g. "Sunrise Bakery=sun rise bakery|sunrise baker"
 VOICE_FIXES=""
-# ElevenLabs voice for desktop voice mode and phone calls. Leave the key empty to keep the local voices (Kokoro on the
-# desktop, the phone's own on calls). With a key, the words Max says go to ElevenLabs to be spoken.
+# ElevenLabs is Max's voice, on the desktop (voice mode and the code tutor) and on phone calls: the words Max says go
+# to ElevenLabs to be spoken. Without a key the desktop shows answers silently.
 # Get one with: npx -y @elevenlabs/cli@latest onboard init
 ELEVENLABS_API_KEY=""
 # A voice id from elevenlabs.io/voices (library voices need a paid plan); empty = the default voice.

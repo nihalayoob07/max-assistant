@@ -1,6 +1,5 @@
-// Numbers, dates, times and money as words, the way an Indian English speaker says them, before the voice
-// engine sees them. Kokoro's own rules read any 4-digit number as a year ("₹6,749" became "sixty-seven
-// forty-nine rupees") and read times and dates oddly, so numbers never reach it as digits except years.
+// Numbers, dates, times and money as words, the way an Indian English speaker says them ("six thousand seven
+// hundred and forty-nine rupees", lakh and crore), before the voice sees them.
 // Works in the page (window.spokenNumbers) and in Node for the self-test: node speech.js --self-test
 'use strict';
 (function (root) {
