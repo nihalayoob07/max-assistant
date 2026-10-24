@@ -48,10 +48,10 @@ async function sandbox(script, timeoutMs = 60000) {
   return run(['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', HOST, remote], timeoutMs);
 }
 
-function run(args, timeoutMs) {
+function run(args, timeoutMs, input) {
   return new Promise((resolve, reject) => {
     const p = spawn('ssh', args, { windowsHide: true });
-    p.stdin.end();   // nothing to send; openshell on the far side waits for stdin to close
+    p.stdin.end(input);   // openshell on the far side waits for stdin to close
     let out = '', err = '';
     const t = setTimeout(() => { p.kill(); reject(new Error('the server took too long to answer')); }, timeoutMs);
     p.stdout.on('data', (d) => (out += d));
@@ -339,7 +339,8 @@ function showTutor(job) {
   if (overlay && !overlay.isDestroyed()) overlay.webContents.send('tuck');
 }
 async function startTutor(job) {
-  if (job.kind === 'learn') { showTutor(job); return "Sure, I'll put an example up."; }
+  if (job.kind === 'learn' && !job.lang) { showTutor({ kind: 'pick', topic: job.topic }); return 'Sure. Which language should I use?'; }
+  if (job.kind === 'learn') { showTutor(job); return `Sure, I'll put up an example in ${job.lang}.`; }
   if (job.kind === 'explain') { showTutor({ kind: 'drop', then: 'explain' }); return 'Drop the file on the code window, or paste the program in.'; }
   const code = await tutorCode.editorCode().catch((e) => { launchLog(`tutor: reading the editor failed: ${e.message}`); return null; });
   if (!code) {
@@ -353,13 +354,24 @@ async function startTutor(job) {
 function tutorCommand(tc) {
   if (tc.cmd === 'close') { tutorWin.close(); return 'Closed the code window.'; }
   tutorWin.webContents.send('tutor', { kind: 'cmd', ...tc });
+  if (tc.cmd === 'lang') return `${tc.lang} it is. I'll put an example up.`;
   return QUIET + ({ fix: `Showing the fix for number ${tc.n}.`, yes: 'On it.', no: 'Okay.', ask: 'Answering on the code window.', mute: 'Muted.' }[tc.cmd] || 'Done, on the code window.');
 }
-ipcMain.handle('tutorAsk', async (e, id, messages) => {
-  await connect();
-  const ctrl = new AbortController();
-  inflightChats.set(id, ctrl);
-  try { return await streamChat(e.sender, id, messages, ctrl.signal); } finally { inflightChats.delete(id); }
+// The tutor asks the model directly (Nemotron Lightning on build.nvidia.com, from inside the sandbox where the key is
+// added on the way out), not the Max agent: through the agent every question carried ~11,000 tokens of its prompt and
+// tools and took 2-4 minutes; this takes seconds. think: reasoning on (debugging and checking answers, where it pays).
+// The request body goes over ssh's stdin (a debug of several files is too long for a Windows command line).
+ipcMain.handle('tutorAsk', async (_e, _id, messages, think) => {
+  await serverConfig();
+  const body = JSON.stringify({ model: CFG.TUTOR_MODEL || 'nvidia/nemotron-3.5-lightning-30b-a3b', messages, temperature: 0.3,
+    max_tokens: think ? 16000 : 4000, chat_template_kwargs: { enable_thinking: !!think } });
+  const remote = `export PATH=$HOME/.local/bin:$PATH; openshell sandbox exec --name ${CFG.SANDBOX} -g nemoclaw --no-tty -- /bin/sh -c '. /tmp/nemoclaw-proxy-env.sh; `
+    + `curl -s -m 280 https://integrate.api.nvidia.com/v1/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer $NVIDIA_INFERENCE_API_KEY" -d @-' 2>/dev/null`;
+  const out = await run(['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', HOST, remote], 300000, body);
+  let j;
+  try { j = JSON.parse(out); } catch { throw new Error("the model didn't answer"); }
+  if (j.error || !j.choices) throw new Error(`the model said: ${String(j.error?.message || j.detail || j.error || 'no answer').slice(0, 160)}`);
+  return j.choices[0]?.message?.content || '';
 });
 ipcMain.on('tutorState', (_e, waiting) => { tutorWaiting = waiting || null; });
 ipcMain.handle('tutorSave', (_e, fix) => tutorCode.applyFix(fix));
@@ -563,11 +575,15 @@ ipcMain.handle('wake', async (_e, buffer, sliding) => {
   if (!hit) return;
   const m = !sliding && audio.length > 16000 * 1.8 ? WAKE.exec(await transcribe(buffer)) : null;   // "Max, play …": get the rest
   const rest = (m?.[1] || '').trim(), q = rest.split(/\s+/).length >= 2 ? rest : undefined;
+  await summon(q);
+});
+// "Max" heard (q: what came after it, if anything), here or through the phone's Remote button.
+async function summon(q) {
   if (overlay && !overlay.isDestroyed()) {
     if (await frontIsDesktop()) overlay.webContents.send('expand');   // nothing open: take the stage
     overlay.webContents.send('wake', q);
   } else openVoice(q, !(await frontIsDesktop()));
-});
+}
 // Is the desktop (wallpaper, taskbar) in front, rather than an app? Then a summoned Max goes full screen;
 // over an app it stays in the corner. One long-lived PowerShell answers each check in milliseconds
 // (starting one per check would add ~0.4 s to every "Max").
@@ -696,6 +712,7 @@ async function startHands() {
       { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     c.on('message', async (m) => {
       if (m?.type === 'aside') { standAside(m.on); c.send({ re: 'aside' }); }
+      if (m?.type === 'say') { summon(m.text).catch((e) => launchLog(`remote: ${e.message}`)); c.send({ re: 'say', ok: true }); }   // the phone's Remote button
       if (m?.type === 'shot') c.send({ re: 'shot', ...await captureScreen(m.at).catch((e) => ({ error: e.message })) });
     });
     return c;

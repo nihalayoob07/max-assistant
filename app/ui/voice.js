@@ -242,6 +242,7 @@ async function ask(text) {
   window.max.appendChat({ role: 'assistant', content: reply });
   asking = false;
   stopAsides();   // the real answer takes over
+  if (/\?\s*$/.test(reply)) awaitAnswer = true;   // Max asked something ("Which language?"): listen for the answer, even tucked away
   speak(reply);
 }
 

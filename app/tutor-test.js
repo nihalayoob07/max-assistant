@@ -18,6 +18,15 @@ assert.equal(kind("what's on my calendar tomorrow"), null);
 assert.equal(kind('how do I get to the station'), null);
 assert.equal(kind('open youtube'), null);
 
+// Which language: asked when none was named; Whisper hears "C" as "see".
+assert.equal(intent('how do I write a while loop').lang, null);
+assert.equal(intent('how do I write a while loop in see').lang, 'C');
+assert.equal(intent('explain for loops in C++').lang, 'C++');
+assert.equal(intent('teach me binary search in java').lang, 'Java');
+assert.deepEqual(command('See.', 'lang'), { cmd: 'lang', lang: 'C' });
+assert.deepEqual(command('see plus plus', 'lang'), { cmd: 'lang', lang: 'C++' });
+assert.equal(command('C', null), null);
+
 assert.deepEqual(command('fix error number 2'), { cmd: 'fix', n: 2 });
 assert.deepEqual(command('Fix error one.'), { cmd: 'fix', n: 1 });
 assert.deepEqual(command('fix #3'), { cmd: 'fix', n: 3 });
@@ -33,7 +42,8 @@ assert.equal(command('why is line 4 wrong').cmd, 'ask');
 assert.equal(command('play some music'), null);
 
 assert.deepEqual(parseTitle('● main.c - homework - Visual Studio Code'), { file: 'main.c', folder: 'homework', dirty: true });
-assert.equal(parseTitle('Welcome - homework - Visual Studio Code'), null);
+assert.deepEqual(parseTitle('Release Notes: 1.143.1 - homework - Visual Studio Code'), { file: null, folder: 'homework', dirty: false });
+assert.equal(parseTitle('Visual Studio Code'), null);
 
 const c = hl('#include <stdio.h>\nint main() { /* a\nb */ printf("hi %d", 42); }', 'c');
 assert.equal(c.length, 3);

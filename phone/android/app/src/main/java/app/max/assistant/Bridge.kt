@@ -12,6 +12,9 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.webkit.JavascriptInterface
 import org.json.JSONObject
@@ -106,4 +109,49 @@ class Bridge(private val act: MainActivity) {
     /** The owner calls Max: no ringing, straight into a conversation with main Max. */
     @JavascriptInterface
     fun callMax() = CallService.dial(ctx)
+
+    // ---------- Remote: this phone as the microphone for Max on the laptop ----------
+    // Google's recogniser hears it here (better than Whisper on the laptop); the web UI sends the words on (POST /remote).
+    // Events go to window.__remote(kind, text): ready, hearing, partial, final, error.
+    private var rec: SpeechRecognizer? = null
+    private var offline = true   // the offline English pack when there is one; dropped if this phone can't
+
+    private fun remote(kind: String, text: String = ""): Unit = act.js("window.__remote && window.__remote(${JSONObject.quote(kind)}, ${JSONObject.quote(text)})")
+
+    @JavascriptInterface
+    fun remoteListen(): Unit = act.runOnUiThread {
+        if (ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            act.requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 7)
+            remote("error", "Allow the microphone, then tap the mic again")
+            return@runOnUiThread
+        }
+        rec?.destroy()
+        rec = SpeechRecognizer.createSpeechRecognizer(act).apply {
+            setRecognitionListener(object : RecognitionListener {
+                fun first(b: Bundle?) = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                override fun onReadyForSpeech(p: Bundle?) = remote("ready")
+                override fun onBeginningOfSpeech() = remote("hearing")
+                override fun onPartialResults(b: Bundle?) { first(b).takeIf { it.isNotBlank() }?.let { remote("partial", it) } }
+                override fun onResults(b: Bundle?) = remote("final", first(b))
+                override fun onError(error: Int) {
+                    if (offline && error !in listOf(SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT)) { offline = false; remoteListen(); return }
+                    remote("error", if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) "Didn't catch that. Tap the mic and try again" else "The mic stopped (error $error). Tap to try again")
+                }
+                override fun onRmsChanged(v: Float) {}
+                override fun onBufferReceived(b: ByteArray?) {}
+                override fun onEndOfSpeech() {}
+                override fun onEvent(t: Int, b: Bundle?) {}
+            })
+            startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+                .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, offline)
+                .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, ctx.packageName))
+        }
+    }
+
+    @JavascriptInterface
+    fun remoteStop() = act.runOnUiThread { rec?.destroy(); rec = null }
 }

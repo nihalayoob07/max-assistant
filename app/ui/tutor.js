@@ -48,13 +48,13 @@ function parseJSON(text) {
   return JSON.parse(t.slice(a, b + 1));
 }
 // One question to Max; a garbled answer is asked once more. Returns null if a newer question replaced it.
-async function askMax(prompt, label) {
+async function askMax(prompt, label, think = false) {
   const id = reqId = Math.random().toString(36).slice(2);
   busy(label);
-  task(null);
+  if (!think) task(null);   // a careful second look runs behind what's on screen: leave its summary up
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const text = await window.max.tutorAsk(id, [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }]);
+      const text = await window.max.tutorAsk(id, [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt }], think);
       if (id !== reqId) return null;
       try { return parseJSON(text); } catch {}
     }
@@ -254,17 +254,29 @@ const steps = (list, code) => (Array.isArray(list) ? list : []).filter((s) => s 
   .map((s) => ({ fi: 0, line: locate(code, s.line, s.text), text: s.text, say: String(s.say), simple: s.simple && String(s.simple), vars: s.vars && String(s.vars) }));
 
 /* ---------- Lessons ---------- */
-async function lesson(topic) {
+// No language named ("how do I write a while loop"): ask first. Max asks out loud; the buttons or a spoken
+// "C" (main.js hears it as the answer while waiting is 'lang') start the lesson.
+const PICK = ['C', 'C++', 'Python', 'Java', 'JavaScript', 'C#', 'Go', 'Rust'];
+function pick(topic) {
   reset('lesson');
-  S.title = 'Lesson';
+  S.title = 'Which language?';
+  S.topic = topic;
+  render();
+  task(`“${topic}”. Pick one, say it, or type another below.`, '', 'WHICH LANGUAGE?');
+  $('#code').innerHTML = `<div class="note"><div class="acts start">${PICK.map((l) => btn(l, 'lang:' + l, l === 'C' ? 'p' : '')).join('')}</div></div>`;
+  setWaiting('lang');
+}
+async function lesson(topic, lang) {
+  reset('lesson');
+  S.title = 'Lesson'; S.lang = lang;
   render();
   const r = await askMax(`The user asked: "${topic}".
-Teach it with ONE short, simple example program (5 to 15 lines) in the language they named (Python if they named none). Simple syntax gets a simple program.
+Teach exactly what they asked about (a while loop is not a for loop) with ONE short, simple example program (5 to 15 lines) written in ${lang}, and only ${lang}, whatever language other words in the question suggest. Simple syntax gets a simple program.
 Reply exactly in this shape:
-{"lang":"Python","title":"for loops","code":"the whole program","steps":[{"line":3,"text":"the exact text of line 3","say":"what this line does","simple":"the same, for a complete beginner"}]}
-3 to 6 steps, in order, each on the line it explains. The first step may give the big idea in one sentence.`, 'Max is writing an example');
+{"lang":"${lang}","title":"for loops","code":"the whole program","steps":[{"line":3,"text":"the exact text of line 3","say":"what this line does","simple":"the same, for a complete beginner"}]}
+3 to 6 steps, in order, each on the line it explains. The first step may give the big idea in one sentence.`, `Max is writing a ${lang} example`);
   if (!r) return;
-  S.lang = String(r.lang || ''); S.title = String(r.title || topic);
+  S.lang = lang; S.title = String(r.title || topic);
   S.files = [{ name: 'example', code: tidy(r.code) }];
   S.notes = steps(r.steps, S.files[0].code).sort((a, b) => a.line - b.line);   // top to bottom, whatever order Max sent
   S.offer = true;
@@ -350,32 +362,46 @@ async function debug(files, { editor, dirty } = {}) {
   S.files = files.map((f) => ({ ...f, code: f.code.replace(/\r\n/g, '\n') }));
   S.lang = langOf(files[0].name); S.title = files[0].name;
   render();
-  const listing = S.files.map((f) => `=== ${f.name} ===\n${numbered(f.code)}`).join('\n\n');
-  const r = await askMax(`Debug this code. Find every real problem: syntax errors, runtime errors (crashes, out-of-bounds, null or uninitialised use, infinite loops, wrong types) and logic errors (it doesn't do what it's clearly meant to). Don't run anything: trace it in your head. No style nitpicks.
+  // Two passes: a quick one without reasoning (~10 s) so you see the obvious problems at once, then a careful one with
+  // reasoning (~2 min) in the background that adds what the quick one missed (integer division, off-by-one...).
+  const ask = (careful) => askMax(`Debug this code. Find every real problem: syntax errors, runtime errors (crashes, out-of-bounds, null or uninitialised use, infinite loops, wrong types) and logic errors (it doesn't do what it's clearly meant to, e.g. integer division where a fraction is wanted). Don't run anything: trace it in your head. No style nitpicks.
 ${S.files.length > 1 ? `These files belong together; the first is the one open in the editor.` : ''}
-${listing}
+${S.files.map((f) => `=== ${f.name} ===\n${numbered(f.code)}`).join('\n\n')}
 Reply exactly in this shape:
 {"lang":"C","summary":"one sentence overall","errors":[{"file":"main.c","line":12,"text":"the exact text of that line","kind":"syntax","title":"two to five words","say":"what's wrong and why, in plain words","find":"the exact line or lines to replace, copied from the file without line numbers","replace":"the corrected line or lines"}]}
-kind is syntax, runtime or logic. Order errors by file, then line. If there are none, errors is [].`, `Max is debugging ${S.files.length > 1 ? `${S.files.length} files` : files[0].name}`);
+kind is syntax, runtime or logic. Order errors by file, then line. If there are none, errors is [].`,
+  careful ? 'Max is double-checking for subtler bugs' : `Max is debugging ${S.files.length > 1 ? `${S.files.length} files` : files[0].name}`, careful);
+  const r = await ask(false);
   if (!r) return;
   const unsaved = dirty ? ` (${files[0].name} has unsaved changes in ${editor || 'your editor'}: I read the saved version.)` : '';
   S.lang ||= String(r.lang || '');
-  S.notes = (r.errors || []).filter((e) => e?.say).map((e) => {
+  S.notes = errorNotes(r).map((n, i) => ({ ...n, n: i + 1 }));
+  const summary = () => (S.notes.length ? `${S.notes.length} problem${S.notes.length > 1 ? 's' : ''}: ${r.summary || ''}`.trim() : (r.summary || 'No problems found.')) + unsaved;
+  task(summary(), S.notes.length ? 'bad' : '', S.notes.length ? 'DEBUG' : 'ALL CLEAR');
+  if (S.notes.length) { S.at = 0; S.fi = S.notes[0].fi; }
+  render();
+  say(S.notes.length ? `I found ${S.notes.length === 1 ? 'one problem' : `${S.notes.length} problems`}. Number 1, line ${S.notes[0].line}. ${S.notes[0].say}` : String(r.summary || "I couldn't find any problems in it."));
+  const deep = await ask(true);
+  if (!deep || S.kind !== 'debug') return;
+  // New ones only: an error on a line that already has one is the same error.
+  const more = errorNotes(deep).filter((d) => !S.notes.some((n) => n.fi === d.fi && Math.abs(n.line - d.line) <= 1));
+  if (!more.length) return task(summary(), S.notes.length ? 'bad' : '', S.notes.length ? 'DEBUG' : 'ALL CLEAR');
+  for (const d of more) S.notes.push({ ...d, n: S.notes.length + 1 });
+  task(summary(), 'bad', 'DEBUG');
+  render();
+  const first = S.notes[S.notes.length - more.length];
+  say(`Double-checked, and I found ${more.length === 1 ? 'one more' : `${more.length} more`}. Number ${first.n}, line ${first.line}. ${first.say}`);
+}
+// Max's errors as notes on the files (the line found by its text); a fix that can't be placed exactly gets no Fix button.
+function errorNotes(r) {
+  return (r.errors || []).filter((e) => e?.say).map((e) => {
     const fi = Math.max(0, S.files.findIndex((f) => f.name === e.file));
     const f = S.files[fi];
-    return { fi, line: locate(f.code, e.line, e.text), text: e.text, say: String(e.say), kind: String(e.kind || 'error'), title: String(e.title || ''),
+    const n = { fi, line: locate(f.code, e.line, e.text), text: e.text, say: String(e.say), kind: String(e.kind || 'error'), title: String(e.title || ''),
       find: unnumber(e.find).replace(/\r\n/g, '\n'), replace: unnumber(e.replace ?? '').replace(/\r\n/g, '\n'), path: f.path, fileName: f.name };
-  }).map((n, i) => ({ ...n, n: i + 1 }));
-  for (const n of S.notes) if (n.find && !S.files[n.fi].code.includes(n.find)) n.find = '';   // can't place it: no Fix button
-  if (!S.notes.length) {
-    task((r.summary || 'No problems found.') + unsaved, '', 'ALL CLEAR');
-    render();
-    return say(String(r.summary || "I couldn't find any problems in it."));
-  }
-  task(`${S.notes.length} problem${S.notes.length > 1 ? 's' : ''}: ${r.summary || ''}`.trim() + unsaved, 'bad', 'DEBUG');
-  S.at = 0; S.fi = S.notes[0].fi;
-  render();
-  say(`I found ${S.notes.length === 1 ? 'one problem' : `${S.notes.length} problems`}. Number 1, line ${S.notes[0].line}. ${S.notes[0].say}`);
+    if (n.find && !f.code.includes(n.find)) n.find = '';
+    return n;
+  });
 }
 function showFix(n) {
   const i = S.notes.findIndex((x) => x.n === n);
@@ -471,6 +497,7 @@ document.addEventListener('drop', (e) => e.preventDefault());
 
 /* ---------- Controls ---------- */
 function act(a) {
+  if (a.startsWith('lang:')) return lesson(S.topic, a.slice(5));
   if (a === 'next') return go(S.at + 1);
   if (a === 'prev') return go(S.at - 1);
   if (a === 'back') { S.answer = null; return render(); }
@@ -499,6 +526,7 @@ $('#q').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   const q = $('#q').value;
   $('#q').value = '';
+  if (S.waiting === 'lang' && q.trim()) return lesson(S.topic, q.trim().slice(0, 30));   // a language not on the buttons
   question(q);
 });
 document.addEventListener('keydown', (e) => {
@@ -510,11 +538,13 @@ document.addEventListener('keydown', (e) => {
 
 // Jobs and spoken commands from main.js.
 window.max.onTutor((job) => {
-  if (job.kind === 'learn') return lesson(job.topic);
+  if (job.kind === 'learn') return lesson(job.topic, job.lang);
+  if (job.kind === 'pick') return pick(job.topic);
   if (job.kind === 'debug') return debug(job.files, job);
   if (job.kind === 'drop') return showDrop(job.then, job.note);
   if (job.kind !== 'cmd') return;
   const c = job.cmd;
+  if (c === 'lang') return S.waiting === 'lang' ? lesson(S.topic, job.lang) : null;
   if (c === 'next' || c === 'prev') return act(c);
   if (c === 'simple') { S.simple = true; render(); return sayCurrent(); }
   if (c === 'trace') return trace();

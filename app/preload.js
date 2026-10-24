@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld('max', {
   onTuck: (cb) => ipcRenderer.on('tuck', () => cb()),
   // The code tutor (ui/tutor.js)
   onTutor: (cb) => ipcRenderer.on('tutor', (_e, job) => cb(job)),
-  tutorAsk: (id, messages) => ipcRenderer.invoke('tutorAsk', id, messages),
+  tutorAsk: (id, messages, think) => ipcRenderer.invoke('tutorAsk', id, messages, !!think),
   tutorState: (waiting) => ipcRenderer.send('tutorState', waiting),
   tutorSave: (fix) => ipcRenderer.invoke('tutorSave', fix),
   tutorRead: (p) => ipcRenderer.invoke('tutorRead', p),

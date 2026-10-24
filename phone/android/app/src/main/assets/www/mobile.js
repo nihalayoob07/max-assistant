@@ -62,6 +62,7 @@ const callsBar = () => {
   const on = data?.callsOn !== false;
   return `<div class="panel callbar">
       <button class="hud amber" data-call-max>Call Max</button>
+      <button class="hud" data-remote>Remote</button>
       <button class="switch ${on ? 'on' : ''}" data-calls role="switch" aria-checked="${on}">
         <span class="knob"></span><span>Max's calls ${on ? 'on' : 'off (Telegram only)'}</span></button>
     </div>`;
@@ -91,6 +92,7 @@ document.addEventListener('click', async (e) => {
   }
   if (t.dataset.register !== undefined) { Android.register(); return toast('Registering…'); }
   if (t.dataset.callMax !== undefined) return Android.callMax();
+  if (t.dataset.remote !== undefined) return remoteOpen();
   if (t.dataset.calls !== undefined) {
     try {
       data.callsOn = await window.max.calls(data.callsOn === false);
@@ -114,3 +116,53 @@ window.maxNative = { onResume() { serverOk = null; if (view === 'setup') render(
 // First run: open on Setup until the must-haves are done.
 if (location.hash === '#chat') go('chat');   // "Chat" on a ringing call
 else if (setupItems().items.some((i) => !i[3] && !i[4])) go('setup');
+
+// Remote: the phone as the microphone for Max on the laptop. Nothing runs here: the phone's recogniser (better than the
+// laptop's Whisper at hearing you) turns speech into words and the server hands them to the laptop app, which acts as
+// if you'd said "Max, …" there. One tap, one request; tap the mic again for the next.
+const remoteEl = document.createElement('div');
+remoteEl.className = 'remote';
+remoteEl.hidden = true;
+remoteEl.innerHTML = `<div class="remote-box">
+    <div class="remote-head"><b>Remote</b><span>talking to Max on the laptop</span></div>
+    <div class="remote-said" id="remoteSaid"></div>
+    <div class="remote-status" id="remoteStatus"></div>
+    <button class="remote-mic" id="remoteMic" aria-label="Talk to Max on the laptop">
+      <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
+    <ul class="remote-log" id="remoteLog"></ul>
+    <button class="hud" id="remoteClose">Close</button>
+  </div>`;
+document.body.append(remoteEl);
+const $r = (id) => document.getElementById(id);
+let remoteBusy = false;
+function remoteStatus(text, cls = '') { $r('remoteStatus').textContent = text; $r('remoteStatus').className = 'remote-status ' + cls; }
+function remoteListen() {
+  if (remoteBusy) return;
+  $r('remoteSaid').textContent = '';
+  remoteEl.classList.add('listening');
+  remoteStatus('Listening…');
+  Android.remoteListen();
+}
+function remoteOpen() { remoteEl.hidden = false; remoteListen(); }
+window.__remote = async (kind, text) => {
+  if (remoteEl.hidden) return;
+  if (kind === 'ready') return remoteStatus('Speak now');
+  if (kind === 'hearing') return remoteStatus('Hearing you…');
+  if (kind === 'partial') { $r('remoteSaid').textContent = text; return; }
+  remoteEl.classList.remove('listening');
+  if (kind === 'error' || !text.trim()) return remoteStatus(text || "Didn't catch that. Tap the mic and try again", 'bad');
+  $r('remoteSaid').textContent = text;
+  remoteBusy = true;
+  remoteStatus('Sending to the laptop…');
+  try {
+    await window.max.remote(text);
+    remoteStatus('Sent. Max on the laptop is on it.', 'ok');
+    const li = document.createElement('li');
+    li.textContent = text;
+    $r('remoteLog').prepend(li);
+    while ($r('remoteLog').children.length > 5) $r('remoteLog').lastChild.remove();
+  } catch (e) { remoteStatus(String(e.message || e), 'bad'); }
+  remoteBusy = false;
+};
+$r('remoteMic').addEventListener('click', remoteListen);
+$r('remoteClose').addEventListener('click', () => { Android.remoteStop(); remoteEl.classList.remove('listening'); remoteEl.hidden = true; });

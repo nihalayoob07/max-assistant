@@ -594,6 +594,20 @@ async function speech(text) {
   return { audio: mp3.toString('base64') };
 }
 
+// The phone as a microphone for Max on the laptop (the Remote button): the phone's recogniser hears it, and the text
+// goes down the laptop's reverse tunnel (:18700, its hands helper) to the Max app there, which takes it like "Max, …".
+async function remote(text) {
+  const said = String(text || '').trim().slice(0, 500);
+  if (!said) throw new Error('nothing heard');
+  const token = fs.readFileSync(path.join(process.env.HOME || '', '.config/max-hands/token'), 'utf8').trim();
+  const r = await fetch('http://127.0.0.1:18700/say', { method: 'POST', headers: { 'X-Max-Token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: said }), signal: AbortSignal.timeout(10000) }).catch(() => null);
+  if (!r) throw new Error("the laptop isn't connected: is Max running on it?");
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || `the laptop said ${r.status}`);
+  return { ok: true };
+}
+
 const ROUTES = {
   'GET /health': async () => ({ ok: true }),
   'GET /data': async () => ({ ...(await load()), deskMode: deskMode(), callsOn: callsOn() }),
@@ -610,6 +624,7 @@ const ROUTES = {
   'POST /call/decide': (j) => decideCall(callId(j.id), j),
   'POST /ring': async (j) => { await ring(callId(j.id)); return { ok: true }; },
   'POST /tts': (j) => speech(j.text),
+  'POST /remote': (j) => remote(j.text),
   'GET /wa': () => relay('GET', '/wa'),
   'POST /wa': (j) => relay('POST', '/wa', { set: j.set, chat: j.chat, handler: j.handler }),
   'POST /voice-speed': async (j) => ({ speed: voiceSpeed(j.speed) }),

@@ -67,7 +67,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
 /* Code */
-.code { flex: 1; min-height: 0; overflow: auto; font-variant-ligatures: none; padding: 10px 0 24px; font: 13.5px/var(--row) var(--mono); color: var(--code); }
+.code { flex: 1; min-height: 0; overflow: auto; font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; padding: 10px 0 24px; font: 13.5px/var(--row) var(--mono); color: var(--code); }
 .ln { display: flex; min-height: var(--row); }
 .ln .g { flex: none; width: 58px; padding-right: 14px; text-align: right; color: #5a5a5a; user-select: none; white-space: nowrap; }
 .ln .tx { white-space: pre-wrap; word-break: break-all; padding-right: 16px; flex: 1; }
@@ -99,6 +99,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .diff div { white-space: pre-wrap; padding: 0 10px; }
 .diff .del { background: rgba(255, 77, 106, 0.12); color: #f2a7b4; }
 .diff .add { background: rgba(78, 201, 139, 0.12); color: #a6e6c4; }
+.acts.start { justify-content: flex-start; }
 .acts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .btn { border: 1px solid var(--line-strong); background: transparent; border-radius: 8px; padding: 3px 12px; font-size: 14px; font-weight: 600; }
 .btn:hover { background: rgba(255, 255, 255, 0.06); }
@@ -113,6 +114,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .edit .eg .bad { color: var(--red); }
 .edit .ew { position: relative; flex: 1; min-height: var(--row); }
 .edit pre, .edit textarea {
+  font-feature-settings: "calt" 0, "liga" 0;
   margin: 0; padding: 0 16px 0 0; border: 0; font: inherit; letter-spacing: inherit; tab-size: 4;
   white-space: pre-wrap; word-break: break-all; overflow: hidden;
 }

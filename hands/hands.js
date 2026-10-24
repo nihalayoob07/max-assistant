@@ -164,12 +164,20 @@ http.createServer((req, res) => {
     if (!WIN) return send(res, 400, { error: 'screen is laptop only' });
     return screenshot().then((r) => { log({ screen: true, ok: !r.error }); send(res, r.error ? 500 : 200, r); });
   }
-  if (req.method !== 'POST' || (req.url !== '/run' && req.url !== '/mouse')) return send(res, 404, { error: 'not found' });
+  if (req.method !== 'POST' || !['/run', '/mouse', '/say'].includes(req.url)) return send(res, 404, { error: 'not found' });
   let body = '';
   req.on('data', (d) => { body += d; if (body.length > 100000) req.destroy(); });
   req.on('end', async () => {
     let j;
     try { j = JSON.parse(body); } catch { return send(res, 400, { error: 'bad json' }); }
+    // The phone as a microphone: what was said there goes to the Max app here, as if said after "Max".
+    if (req.url === '/say') {
+      const text = String(j.text || '').trim().slice(0, 500);
+      if (!text) return send(res, 400, { error: 'nothing to say' });
+      const r = await askApp({ type: 'say', text }, 3000);
+      log({ say: text.length, ok: !r.error });
+      return send(res, r.error ? 500 : 200, r);
+    }
     if (req.url === '/mouse') {
       if (!WIN) return send(res, 400, { error: 'mouse is laptop only' });
       const r = await mouse(j);

@@ -13,13 +13,30 @@ const IN_LANG = new RegExp(`\\b(?:in|using|with|for)\\s+(?:${LANGS})(?![\\w+#])`
 const TOPIC = /\b(for[- ]?loops?|while[- ]?loops?|do[- ]while|loops?|if[- ]else|else[- ]if|if statements?|switch( case| statements?)?|arrays?|tuples?|dictionar(?:y|ies)|hash ?maps?|hash ?tables?|pointers?|recursion|recursive functions?|functions?|methods?|classes|objects? oriented|oop|structs?|unions?|enums?|variables?|data types?|operators?|ternary|lambdas?|closures?|exceptions?|try[- ]catch|try[- ]except|error handling|file handling|printf|scanf|cout|cin|malloc|calloc|free\(\)|linked lists?|stacks? and queues?|binary (?:search|trees?)|bubble sort|merge sort|quick ?sort|insertion sort|selection sort|syntax|inheritance|polymorphism|encapsulation|interfaces?|generics?|templates?|vectors?|iterators?|generators?|decorators?|async(?:hronous)?|promises?|callbacks?|list comprehensions?|slicing|regex|regular expressions?|bitwise|macros?|header files?|namespaces?|constructors?|destructors?|algorithms?|data structures?|programming|coding)\b/i;
 const NOT_CODE = /\b(calendar|todos?|leads?|whatsapp|meeting|email|weather|video|youtube|song|music|remind|brief)\b/i;
 
+// Which language was named, as Whisper hears it ("in see" is C). In a request only what follows "in/using/with"
+// counts ("how do loops go" names no language); as the answer to "Which language?" the whole reply does.
+const LANGUAGES = [
+  ['C++', /\b(?:c|see|sea)\s*(?:\+\+|plus\s*plus)|\bcpp\b/i], ['C#', /\b(?:c|see|sea)\s*(?:#|sharp)/i],
+  ['JavaScript', /\bjava\s?script\b|\bjs\b/i], ['TypeScript', /\btype\s?script\b/i], ['Java', /\bjava\b/i],
+  ['Python', /\bpython\b/i], ['C', /\b(?:c|see|sea)\b/i], ['Go', /\b(?:go|golang)\b/i], ['Rust', /\brust\b/i],
+  ['Kotlin', /\bkotlin\b/i], ['Swift', /\bswift\b/i], ['PHP', /\bphp\b/i], ['Ruby', /\bruby\b/i], ['SQL', /\b(?:sql|sequel)\b/i],
+  ['Bash', /\b(?:bash|shell)\b/i], ['Dart', /\bdart\b/i], ['Scala', /\bscala\b/i], ['Lua', /\blua\b/i], ['Perl', /\bperl\b/i],
+  ['HTML', /\bhtml\b/i], ['CSS', /\bcss\b/i], ['Assembly', /\bassembly\b/i], ['R', /^\W*(?:the\s+)?(?:r|are)\W*$/i],
+];
+function language(text, answer = false) {
+  const t = String(text || '');
+  const part = answer ? t : (/\b(?:in|using|with)\s+(.{1,24})/i.exec(t) || [])[1];
+  return part ? LANGUAGES.find(([, re]) => re.test(part))?.[0] || null : null;
+}
+
 function intent(text) {
   const t = String(text || '').trim();
   if (/\b(debug|find (?:the |any )?(?:bugs?|errors?|mistakes?)|what'?s wrong (?:with|in) (?:my|this|the)|fix (?:my|this|the) (?:code|program|script|bugs?|errors?))\b/i.test(t)) return { kind: 'debug' };
   if (/\bexplain\b.*\b(?:this|my|a|the|that)\s+(?:code|file|program|script)\b/i.test(t)) return { kind: 'explain' };
   if (NOT_CODE.test(t)) return null;
-  if (/\b(?:tutor|teach) me\b/i.test(t)) return { kind: 'learn', topic: t };
-  if (/\b(how (?:do|can|would|should|to)|explain|what (?:is|are)|what'?s|show me|help me (?:understand|learn|write)|learn|write)\b/i.test(t) && (TOPIC.test(t) || IN_LANG.test(t))) return { kind: 'learn', topic: t };
+  if (/\b(?:tutor|teach) me\b/i.test(t) || (/\b(how (?:do|can|would|should|to)|explain|what (?:is|are)|what'?s|show me|help me (?:understand|learn|write)|learn|write)\b/i.test(t) && (TOPIC.test(t) || IN_LANG.test(t)))) {
+    return { kind: 'learn', topic: t, lang: language(t) };
+  }
   return null;
 }
 
@@ -29,6 +46,7 @@ const NUM = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eigh
 function command(text, waiting) {
   const t = String(text || '').toLowerCase().replace(/[^\w\s#+']/g, ' ').replace(/\s+/g, ' ').trim();
   let m;
+  if (waiting === 'lang') { const lang = language(t, true); if (lang) return { cmd: 'lang', lang }; }   // the answer to "Which language?"
   if (/^(?:next|go on|continue|carry on|next (?:line|step|one|error|bug))$/.test(t)) return { cmd: 'next' };
   if (/^(?:previous|go back|back|previous (?:line|step|one|error|bug)|last (?:line|step|one))$/.test(t)) return { cmd: 'prev' };
   if ((m = /\bfix (?:the )?(?:error |bug |mistake |problem |issue )?(?:number |no |#)?(\d+|[a-z]+)\b/.exec(t)) && (Number(m[1]) || NUM[m[1]])) return { cmd: 'fix', n: Number(m[1]) || NUM[m[1]] };
@@ -75,7 +93,8 @@ function parseTitle(title) {
   const dirty = /^[●•]\s*/.test(parts[0]);
   const file = parts[0].replace(/^[●•]\s*/, '');
   const folder = parts.length >= 3 ? parts[1].replace(/\s*\(Workspace\)$/, '') : '';
-  return SOURCE.test(file) ? { file, folder, dirty } : null;
+  // A tab that isn't code in front (Release Notes, Settings): the folder still tells us the project.
+  return SOURCE.test(file) ? { file, folder, dirty } : folder ? { file: null, folder, dirty: false } : null;
 }
 // Recently opened folders of that editor, newest first.
 function recentFolders(appDirs) {
@@ -94,20 +113,25 @@ function recentFolders(appDirs) {
   }
   return out.sort((a, b) => b.at - a.at).map((x) => x.path);
 }
+// The file called `name` under root, or with no name the code file edited most recently.
 function findFile(root, name, depth = 6) {
   const queue = [[root, 0]];
-  let seen = 0;
+  let seen = 0, newest = null, newestAt = 0;
   while (queue.length && seen < 5000) {
     const [dir, d] = queue.shift();
     let entries = [];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
     for (const e of entries) {
       seen++;
-      if (e.isFile() && e.name === name) return path.join(dir, e.name);
+      if (e.isFile() && name && e.name === name) return path.join(dir, e.name);
+      if (e.isFile() && !name && SOURCE.test(e.name)) {
+        const at = fs.statSync(path.join(dir, e.name)).mtimeMs;
+        if (at > newestAt) { newest = path.join(dir, e.name); newestAt = at; }
+      }
       if (e.isDirectory() && d < depth && !SKIP_DIRS.has(e.name) && !e.name.startsWith('.')) queue.push([path.join(dir, e.name), d + 1]);
     }
   }
-  return null;
+  return newest;
 }
 const MAX_BYTES = 60000;   // what goes to Max in one question
 // The active file first, then source files of the same kind beside it, up to MAX_BYTES.
@@ -168,4 +192,4 @@ function applyFix({ file, find, replace }) {
   return updated.replace(/\r\n/g, '\n');
 }
 
-module.exports = { intent, command, parseTitle, editorCode, allow, readDropped, applyFix };
+module.exports = { intent, command, language, parseTitle, editorCode, allow, readDropped, applyFix };
