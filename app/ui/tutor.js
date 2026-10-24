@@ -271,7 +271,7 @@ async function lesson(topic, lang) {
   S.title = 'Lesson'; S.lang = lang;
   render();
   const r = await askMax(`The user asked: "${topic}".
-Teach exactly what they asked about (a while loop is not a for loop) with ONE short, simple example program (5 to 15 lines) written in ${lang}, and only ${lang}, whatever language other words in the question suggest. Simple syntax gets a simple program.
+Teach exactly what they asked about (a while loop is not a for loop) with ONE short, simple example program (5 to 15 lines) written in ${lang}, and only ${lang}, whatever language other words in the question suggest. Simple syntax gets a simple program. If they asked to learn the whole language, start at the very beginning: a first program and what each part of it does.
 Reply exactly in this shape:
 {"lang":"${lang}","title":"for loops","code":"the whole program","steps":[{"line":3,"text":"the exact text of line 3","say":"what this line does","simple":"the same, for a complete beginner"}]}
 3 to 6 steps, in order, each on the line it explains. The first step may give the big idea in one sentence.`, `Max is writing a ${lang} example`);

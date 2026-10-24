@@ -25,8 +25,12 @@ const LANGUAGES = [
 ];
 function language(text, answer = false) {
   const t = String(text || '');
-  const part = answer ? t : (/\b(?:in|using|with)\s+(.{1,24})/i.exec(t) || [])[1];
-  return part ? LANGUAGES.find(([, re]) => re.test(part))?.[0] || null : null;
+  const find = (part) => (part ? LANGUAGES.find(([, re]) => re.test(part))?.[0] || null : null);
+  if (answer) return find(t);
+  // "… in C", "C language", "Python programming", "teach me C", "learn Java".
+  return find((/\b(?:in|using|with)\s+(.{1,24})/i.exec(t) || [])[1])
+    || find((/(?:^|\s)(\S{1,12}(?:\s+(?:plus\s+plus|sharp|script))?)\s+(?:language|programming|lang)\b/i.exec(t) || [])[1])
+    || find((/\b(?:teach me|tutor me (?:on|in)|learn|basics of|intro to)\s+(\S{1,12}(?:\s+(?:plus\s+plus|sharp|script))?)\s*[.?!]?$/i.exec(t) || [])[1]);
 }
 
 function intent(text) {
