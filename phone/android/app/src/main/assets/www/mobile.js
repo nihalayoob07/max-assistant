@@ -141,6 +141,7 @@ function remoteListen() {
   $r('remoteSaid').textContent = '';
   remoteEl.classList.add('listening');
   remoteStatus('Listening…');
+  window.max.remoteHold().catch(() => {});   // the laptop stops listening meanwhile, so it doesn't answer too
   Android.remoteListen();
 }
 function remoteOpen() { remoteEl.hidden = false; remoteListen(); }

@@ -172,6 +172,7 @@ http.createServer((req, res) => {
     try { j = JSON.parse(body); } catch { return send(res, 400, { error: 'bad json' }); }
     // The phone as a microphone: what was said there goes to the Max app here, as if said after "Max".
     if (req.url === '/say') {
+      if (j.hold) return send(res, 200, await askApp({ type: 'hold' }, 3000));   // the phone started listening
       const text = String(j.text || '').trim().slice(0, 500);
       if (!text) return send(res, 400, { error: 'nothing to say' });
       const r = await askApp({ type: 'say', text }, 3000);

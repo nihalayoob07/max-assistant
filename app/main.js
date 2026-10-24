@@ -355,6 +355,7 @@ function tutorCommand(tc) {
   if (tc.cmd === 'close') { tutorWin.close(); return 'Closed the code window.'; }
   tutorWin.webContents.send('tutor', { kind: 'cmd', ...tc });
   if (tc.cmd === 'lang') return `${tc.lang} it is. I'll put an example up.`;
+  if (tc.cmd === 'relang') return "Sorry, I didn't catch the language. C, Python, Java, or another one?";   // a question: Max listens again
   return QUIET + ({ fix: `Showing the fix for number ${tc.n}.`, yes: 'On it.', no: 'Okay.', ask: 'Answering on the code window.', mute: 'Muted.' }[tc.cmd] || 'Done, on the code window.');
 }
 // The tutor asks the model directly (Nemotron Lightning on build.nvidia.com, from inside the sandbox where the key is
@@ -491,7 +492,7 @@ function voiceBounds(corner) {
   const a = screen.getPrimaryDisplay().workArea;
   return corner ? { x: a.x, y: a.y + a.height - 280, width: 620, height: 280 } : { x: a.x, y: a.y + 1, width: a.width, height: a.height - 1 };
 }
-function openVoice(question, corner = false) {
+function openVoice(question, corner = false, phone = false) {
   if (overlay && !overlay.isDestroyed()) {
     if (!corner) overlay.webContents.send('expand');
     return;
@@ -504,6 +505,7 @@ function openVoice(question, corner = false) {
   overlay.setAlwaysOnTop(true, 'screen-saver');
   const query = {};
   if (question) query.q = question;
+  if (phone) query.phone = '1';
   if (corner) { query.corner = '1'; setThrough(true); overlay.setFocusable(false); }
   overlay.loadFile(path.join(__dirname, 'ui', 'voice.html'), { query });
   // Show on the first of: ready-to-show, page loaded, or 3 s. Opened on the second monitor (125% scaling),
@@ -566,7 +568,7 @@ const NAME_ANYWHERE = new RegExp(`\\b${NAME}\\b`, 'i');
 ipcMain.handle('wake', async (_e, buffer, sliding) => {
   const t0 = Date.now();
   const audio = new Float32Array(buffer);
-  if (audio.length < 16000 * 0.3) return;
+  if (audio.length < 16000 * 0.3 || Date.now() < phoneHoldUntil) return;
   const head = await (await asr())(audio.slice(0, 16000 * 2), { max_new_tokens: sliding ? 12 : 4 });
   const heard = String(head?.text || '').trim();
   const hit = sliding ? NAME_ANYWHERE.test(heard) : WAKE.test(heard);
@@ -578,12 +580,16 @@ ipcMain.handle('wake', async (_e, buffer, sliding) => {
   await summon(q);
 });
 // "Max" heard (q: what came after it, if anything), here or through the phone's Remote button.
-async function summon(q) {
+// phone: it came from the phone's Remote, so the laptop doesn't open its own mic afterwards.
+async function summon(q, phone = false) {
   if (overlay && !overlay.isDestroyed()) {
     if (await frontIsDesktop()) overlay.webContents.send('expand');   // nothing open: take the stage
-    overlay.webContents.send('wake', q);
-  } else openVoice(q, !(await frontIsDesktop()));
+    overlay.webContents.send('wake', q, phone);
+  } else openVoice(q, !(await frontIsDesktop()), phone);
 }
+// While the phone's Remote listens (up to 20 s, or until its words arrive) this laptop doesn't listen for "Max" or
+// anything else: it would hear you talking into the phone and answer twice.
+let phoneHoldUntil = 0;
 // Is the desktop (wallpaper, taskbar) in front, rather than an app? Then a summoned Max goes full screen;
 // over an app it stays in the corner. One long-lived PowerShell answers each check in milliseconds
 // (starting one per check would add ~0.4 s to every "Max").
@@ -712,7 +718,9 @@ async function startHands() {
       { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     c.on('message', async (m) => {
       if (m?.type === 'aside') { standAside(m.on); c.send({ re: 'aside' }); }
-      if (m?.type === 'say') { summon(m.text).catch((e) => launchLog(`remote: ${e.message}`)); c.send({ re: 'say', ok: true }); }   // the phone's Remote button
+      // The phone's Remote button: 'hold' when it starts listening, 'say' with what it heard.
+      if (m?.type === 'hold') { phoneHoldUntil = Date.now() + 20000; if (overlay && !overlay.isDestroyed()) overlay.webContents.send('hold'); c.send({ re: 'hold', ok: true }); }
+      if (m?.type === 'say') { phoneHoldUntil = 0; summon(m.text, true).catch((e) => launchLog(`remote: ${e.message}`)); c.send({ re: 'say', ok: true }); }
       if (m?.type === 'shot') c.send({ re: 'shot', ...await captureScreen(m.at).catch((e) => ({ error: e.message })) });
     });
     return c;

@@ -98,8 +98,12 @@ async function startMic() {
 // everything you say while you work. Full size, it listens after every answer.
 let mini = false;
 let awaitAnswer = false;   // Max just asked something on its own ("Want me to draft them?"): listen for the answer
+// phoneTurn: the question came from the phone's Remote, so this laptop's mic stays off (it would hear you talking into
+// the phone); you answer on the phone.
+let phoneTurn = false;
 function listen(woken = false) {
   chunks = []; preroll = []; speaking = false;
+  if (phoneTurn) { phoneTurn = false; awaitAnswer = false; return setMode('idle', 'Answer on your phone'); }
   if (awaitAnswer) { woken = true; awaitAnswer = false; }
   if (mini && !woken) return setMode('idle', 'Say “Max”');
   setMode('listening', 'Listening');
@@ -160,7 +164,10 @@ function chime() {
     o.connect(g).connect(out.destination); o.start(t + at); o.stop(t + at + 0.2);
   }
 }
-window.max.onWake((q) => {
+// The phone's Remote is listening: stop listening here too (now, or after whatever Max is saying).
+window.max.onHold(() => { phoneTurn = true; if (mode === 'listening') listen(); });
+window.max.onWake((q, phone) => {
+  phoneTurn = !!phone;
   chime();
   if (mode === 'thinking') cancelAsk();
   else if (mode === 'speaking' || mode === 'preparing') { stopSpeaking(); $('#reply').textContent = pendingReply; }
@@ -481,6 +488,7 @@ async function boot() {
     $('#reply').textContent = '';
     if (!stream) await startMic();
     const q = new URLSearchParams(location.search).get('q');   // "Max, play some lofi" arrives already asked
+    phoneTurn = !!new URLSearchParams(location.search).get('phone');
     if (q) ask(q); else listen();
   } catch (e) {
     const noMic = /Permission|NotAllowed|NotFound/i.test(e.name + e.message);

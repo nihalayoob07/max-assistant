@@ -46,7 +46,13 @@ const NUM = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eigh
 function command(text, waiting) {
   const t = String(text || '').toLowerCase().replace(/[^\w\s#+']/g, ' ').replace(/\s+/g, ' ').trim();
   let m;
-  if (waiting === 'lang') { const lang = language(t, true); if (lang) return { cmd: 'lang', lang }; }   // the answer to "Which language?"
+  // The answer to "Which language?". A short reply that names none was misheard ("right away you"): ask again rather than
+  // let it reach Max, who'd answer the coding question in the corner. A longer one is a new request.
+  if (waiting === 'lang') {
+    const lang = language(t, true);
+    if (lang) return { cmd: 'lang', lang };
+    if (t.split(' ').length <= 4) return { cmd: 'relang' };
+  }
   if (/^(?:next|go on|continue|carry on|next (?:line|step|one|error|bug))$/.test(t)) return { cmd: 'next' };
   if (/^(?:previous|go back|back|previous (?:line|step|one|error|bug)|last (?:line|step|one))$/.test(t)) return { cmd: 'prev' };
   if ((m = /\bfix (?:the )?(?:error |bug |mistake |problem |issue )?(?:number |no |#)?(\d+|[a-z]+)\b/.exec(t)) && (Number(m[1]) || NUM[m[1]])) return { cmd: 'fix', n: Number(m[1]) || NUM[m[1]] };

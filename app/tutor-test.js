@@ -26,6 +26,8 @@ assert.equal(intent('teach me binary search in java').lang, 'Java');
 assert.deepEqual(command('See.', 'lang'), { cmd: 'lang', lang: 'C' });
 assert.deepEqual(command('see plus plus', 'lang'), { cmd: 'lang', lang: 'C++' });
 assert.equal(command('C', null), null);
+assert.deepEqual(command('right away you', 'lang'), { cmd: 'relang' });   // misheard: ask again, never on to Max
+assert.equal(command('actually what is on my calendar today', 'lang'), null);
 
 assert.deepEqual(command('fix error number 2'), { cmd: 'fix', n: 2 });
 assert.deepEqual(command('Fix error one.'), { cmd: 'fix', n: 1 });
