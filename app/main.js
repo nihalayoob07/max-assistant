@@ -459,7 +459,17 @@ async function elevenSpeech(text) {
 }
 
 const cancelled = new Set();
+// While the code tutor's window is talking (its voice being made, then played for as long as its audio lasts), the
+// hologram doesn't speak: its replies show as text only, so two Maxes never talk over each other.
+let tutorVoice = { id: null, until: 0, last: null };   // id: being made; last: the latest one, until it's stopped
+const tutorTalking = () => !!tutorVoice.id || Date.now() < tutorVoice.until;
 async function speak(sender, id, text) {
+  const fromTutor = tutorOpen() && sender === tutorWin.webContents;
+  if (!fromTutor && tutorTalking()) throw new Error('the code window is talking');   // voice.js shows the text instead
+  if (fromTutor) tutorVoice = { id, until: Date.now(), last: id };
+  try { await speakAll(sender, id, text, fromTutor); } finally { if (tutorVoice.id === id) tutorVoice.id = null; }
+}
+async function speakAll(sender, id, text, fromTutor) {
   await serverConfig().catch(() => {});   // the key lives in the server's max.config
   if (!CFG.ELEVENLABS_API_KEY) throw new Error('no ElevenLabs key in max.config');
   // Whole answer in one go: per-sentence generation made Max stop and start, because each piece took
@@ -475,6 +485,7 @@ async function speak(sender, id, text) {
     const out = await elevenSpeech(chunks[i].trim());
     if (cancelled.has(id) || sender.isDestroyed()) break;
     sender.send('tts', { id, rate: out.sampling_rate, pcm: out.audio.buffer.slice(0), last: i === chunks.length - 1 });
+    if (fromTutor) tutorVoice.until = Math.max(tutorVoice.until, Date.now()) + (out.audio.length / out.sampling_rate) * 1000;   // plays back to back
   }
   cancelled.delete(id);
 }
@@ -538,7 +549,10 @@ ipcMain.handle('chatStream', (e, id, messages) => chatStream(e.sender, id, messa
 ipcMain.on('chat-cancel', (_e, id) => inflightChats.get(id)?.abort());
 ipcMain.handle('transcribe', (_e, buffer) => transcribe(buffer));
 ipcMain.handle('speak', (e, id, text) => speak(e.sender, id, text));
-ipcMain.on('speak-cancel', (_e, id) => cancelled.add(id));
+ipcMain.on('speak-cancel', (_e, id) => {
+  cancelled.add(id);
+  if (id === tutorVoice.last) tutorVoice = { id: null, until: 0, last: null };   // the code window stopped talking (muted, next step)
+});
 ipcMain.on('voice', (_e, what) => {
   if (what === 'open') return openVoice();
   if (what === 'close') return overlay?.close();
