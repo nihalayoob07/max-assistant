@@ -100,6 +100,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .diff .del { background: rgba(255, 77, 106, 0.12); color: #f2a7b4; }
 .diff .add { background: rgba(78, 201, 139, 0.12); color: #a6e6c4; }
 .acts.start { justify-content: flex-start; }
+
+/* A course: every lesson, done ones ticked, the one to continue from highlighted */
+.course { display: grid; gap: 6px; padding: 4px 16px 16px; font: 500 16px/1.35 var(--display); }
+.course .acts { margin: 0 0 6px; justify-content: flex-start; }
+.lesson { display: flex; gap: 12px; align-items: center; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); }
+.lesson:hover { border-color: var(--line-strong); background: var(--surface-2); }
+.lesson b { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line-strong); font: 13px var(--mono); color: var(--muted); }
+.lesson.done b { border-color: var(--green); color: var(--green); }
+.lesson.next { border-color: var(--rose); }
+.lesson.next b { border-color: var(--rose); color: var(--rose); }
+.lesson .lt { display: block; font-weight: 600; }
+.lesson .lg { display: block; font-size: 14px; color: var(--muted); }
 .acts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .btn { border: 1px solid var(--line-strong); background: transparent; border-radius: 8px; padding: 3px 12px; font-size: 14px; font-weight: 600; }
 .btn:hover { background: rgba(255, 255, 255, 0.06); }

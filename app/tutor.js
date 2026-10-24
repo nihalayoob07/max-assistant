@@ -29,7 +29,7 @@ function language(text, answer = false) {
   if (answer) return find(t);
   // "… in C", "C language", "Python programming", "teach me C", "learn Java".
   return find((/\b(?:in|using|with)\s+(.{1,24})/i.exec(t) || [])[1])
-    || find((/(?:^|\s)(\S{1,12}(?:\s+(?:plus\s+plus|sharp|script))?)\s+(?:language|programming|lang)\b/i.exec(t) || [])[1])
+    || find((/(?:^|\s)(\S{1,12}(?:\s+(?:plus\s+plus|sharp|script))?)\s+(?:language|programming|lang|course|lessons?|class)\b/i.exec(t) || [])[1])
     || find((/\b(?:teach me|tutor me (?:on|in)|learn|basics of|intro to)\s+(\S{1,12}(?:\s+(?:plus\s+plus|sharp|script))?)\s*[.?!]?$/i.exec(t) || [])[1]);
 }
 
@@ -38,6 +38,9 @@ function intent(text) {
   if (/\b(debug|find (?:the |any )?(?:bugs?|errors?|mistakes?)|what'?s wrong (?:with|in) (?:my|this|the)|fix (?:my|this|the) (?:code|program|script|bugs?|errors?))\b/i.test(t)) return { kind: 'debug' };
   if (/\bexplain\b.*\b(?:this|my|a|the|that)\s+(?:code|file|program|script)\b/i.test(t)) return { kind: 'explain' };
   if (NOT_CODE.test(t)) return null;
+  // A whole language ("teach me C language", "learn Python", "continue my C course"): the course, not one lesson.
+  const lang = language(t);
+  if (lang && /\b(?:teach me|learn|learning|tutor me|basics of|intro to|course|lessons?)\b/i.test(t) && !TOPIC.test(t.replace(/\b(?:programming|coding)\b/gi, ''))) return { kind: 'course', lang };
   if (/\b(?:tutor|teach) me\b/i.test(t) || (/\b(how (?:do|can|would|should|to)|explain|what (?:is|are)|what'?s|show me|help me (?:understand|learn|write)|learn|write)\b/i.test(t) && (TOPIC.test(t) || IN_LANG.test(t)))) {
     return { kind: 'learn', topic: t, lang: language(t) };
   }
@@ -57,6 +60,12 @@ function command(text, waiting) {
     if (lang) return { cmd: 'lang', lang };
     if (t.split(' ').length <= 4) return { cmd: 'relang' };
   }
+  // Courses: the lesson menu, any lesson by number, the next one, carrying on.
+  if (waiting === 'course' && /^(?:yes|yeah|sure|ok|okay|continue|start|resume|carry on|let'?s (?:go|start|continue)|start the course)$/.test(t)) return { cmd: 'continue' };
+  if (/^(?:(?:go to |start )?(?:the )?next lesson|next lesson please)$/.test(t)) return { cmd: 'nextLesson' };
+  if ((m = /^(?:go to |start |open |do )?lesson (?:number |no )?(\d+|[a-z]+)$/.exec(t)) && (Number(m[1]) || NUM[m[1]])) return { cmd: 'lesson', n: Number(m[1]) || NUM[m[1]] };
+  if (/^(?:(?:show|open)(?: me)? (?:the |all |my )?lessons|lessons|(?:the )?(?:lesson |course )?menu|syllabus)$/.test(t)) return { cmd: 'menu' };
+  if (/^skip(?: it| this| this one| the example| the exercise| the practice)?$/.test(t)) return { cmd: 'skip' };
   if (/^(?:next|go on|continue|carry on|next (?:line|step|one|error|bug))$/.test(t)) return { cmd: 'next' };
   if (/^(?:previous|go back|back|previous (?:line|step|one|error|bug)|last (?:line|step|one))$/.test(t)) return { cmd: 'prev' };
   if ((m = /\bfix (?:the )?(?:error |bug |mistake |problem |issue )?(?:number |no |#)?(\d+|[a-z]+)\b/.exec(t)) && (Number(m[1]) || NUM[m[1]])) return { cmd: 'fix', n: Number(m[1]) || NUM[m[1]] };

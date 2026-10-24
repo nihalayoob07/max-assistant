@@ -26,6 +26,8 @@ const S = {
   practice: null,    // { question, before, blank, after, hint, answer, result }
   waiting: null,     // what Max just asked: 'practice' | 'fix'
   offer: false,      // the lesson's last step asks "Want to try an example?"
+  course: null,      // the open course: { lang, syllabus: [{ title, goal }], done: [lesson indexes], last, lessons: { index: Max's lesson } }
+  ci: null,          // which course lesson is on screen (null: a one-off lesson)
 };
 function setWaiting(w) { S.waiting = w; window.max.tutorState(w); }
 
@@ -114,7 +116,7 @@ function noteHTML() {
   }
   const text = S.simple && n.simple ? n.simple : n.say;
   const vars = n.vars ? `<div class="vars">${esc(n.vars)}</div>` : '';
-  const offer = last && S.offer ? `<div class="ask">Want to try an example?</div><div class="acts">${btn('‹ Previous', 'prev', '', S.at === 0)}${btn('Not now', 'nope')}${btn('Try an example', 'practice', 'p')}</div>` : `<div class="acts">${nav}</div>`;
+  const offer = last && S.offer ? `<div class="ask">Want to try an example?</div><div class="acts">${btn('‹ Previous', 'prev', '', S.at === 0)}${S.ci !== null ? btn('Skip to the next lesson', 'finish') : btn('Not now', 'nope')}${btn('Try an example', 'practice', 'p')}</div>` : `<div class="acts">${nav}</div>`;
   return `<div class="note">${S.traced ? `<div class="head">STEP ${S.at + 1} OF ${S.notes.length}</div>` : ''}${rich(text)}${vars}${offer}</div>`;
 }
 
@@ -126,6 +128,8 @@ function render() {
   $('#trace').hidden = !lessonish || !S.files.length;
   $('#trace').classList.toggle('on', S.traced);
   $('#check').hidden = $('#hint').hidden = S.kind !== 'practice';
+  $('#skip').hidden = S.kind !== 'practice' || S.ci === null;
+  $('#lessons').hidden = !S.course || S.kind === 'menu';
   // Files: only when debugging more than one.
   $('#tabs').hidden = S.files.length < 2;
   $('#tabs').innerHTML = S.files.map((f, i) => {
@@ -133,6 +137,7 @@ function render() {
     return `<button data-file="${i}" class="${i === S.fi ? 'on' : ''}">${esc(f.name)}${open ? `<b>${open}</b>` : ''}</button>`;
   }).join('');
   if (S.kind === 'practice') return renderPractice();
+  if (S.kind === 'menu') return renderMenu();
   const f = S.files[S.fi];
   if (!f) { $('#code').innerHTML = ''; return; }
   const cur = current();
@@ -180,7 +185,8 @@ function renderPractice() {
     const list = (r.mistakes || []).map((m) => `<li>Line ${m.at}: ${rich(m.say)}</li>`).join('');
     $('#result').innerHTML = `<div class="note"><div class="head ${r.correct ? 'ok' : 'bad'}">${r.correct ? 'CORRECT' : 'NOT QUITE'}</div>${rich(r.say)}`
       + (r.output ? `<div class="out">${esc(r.output)}</div>` : '') + (list ? `<ul>${list}</ul>` : '')
-      + `<div class="acts">${r.correct ? btn('Done', 'done') + btn('Another one', 'practice', 'p') : btn('Show a hint', 'hint') + btn('Check again', 'check', 'p')}</div></div>`;
+      + `<div class="acts">${r.correct ? (S.ci !== null ? btn('Another one', 'practice') + btn('Next lesson', 'finish', 'p') : btn('Done', 'done') + btn('Another one', 'practice', 'p'))
+        : (S.ci !== null ? btn('Skip', 'finish') : '') + btn('Show a hint', 'hint') + btn('Check again', 'check', 'p')}</div></div>`;
     $('#result').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   } else ta.focus();
 }
@@ -246,7 +252,7 @@ function go(i) {
 }
 function reset(kind) {
   cancelAsk(); stopVoice();
-  Object.assign(S, { kind, lang: '', title: '', files: [], fi: 0, notes: [], at: 0, simple: false, traced: false, answer: null, showFix: false, practice: null, offer: false });
+  Object.assign(S, { kind, lang: '', title: '', files: [], fi: 0, notes: [], at: 0, simple: false, traced: false, answer: null, showFix: false, practice: null, offer: false, ci: null });
   setWaiting(null);
   task(null);
 }
@@ -275,14 +281,100 @@ Teach exactly what they asked about (a while loop is not a for loop) with ONE sh
 Reply exactly in this shape:
 {"lang":"${lang}","title":"for loops","code":"the whole program","steps":[{"line":3,"text":"the exact text of line 3","say":"what this line does","simple":"the same, for a complete beginner"}]}
 3 to 6 steps, in order, each on the line it explains. The first step may give the big idea in one sentence.`, `Max is writing a ${lang} example`);
-  if (!r) return;
-  S.lang = lang; S.title = String(r.title || topic);
+  if (r) showLesson(r, lang, String(r.title || topic));
+}
+function showLesson(r, lang, title) {
+  S.lang = lang; S.title = title;
   S.files = [{ name: 'example', code: tidy(r.code) }];
   S.notes = steps(r.steps, S.files[0].code).sort((a, b) => a.line - b.line);   // top to bottom, whatever order Max sent
   S.offer = true;
   if (!S.notes.length) return task("Max didn't send any steps. Ask again?", 'bad');
   go(0);
 }
+
+/* ---------- Courses ---------- */
+// "Teach me C language": a course of 12-16 lessons from the first program to advanced topics, planned once by Max and
+// kept on this laptop (main.js) with each lesson as written and which are done, so it carries on where it stopped.
+// Any lesson can be opened from the menu at any time; after each one there's an exercise, which can be skipped.
+async function openCourse(lang) {
+  reset('menu');
+  S.course = null;   // a different language's course may be open
+  S.lang = lang; S.title = 'Course';
+  render();
+  let c = await window.max.course(lang);
+  if (!(c?.syllabus?.length >= 8)) {   // none yet, or a too-short plan from before
+    // The fast model once copied the one-item example and sent a 1-lesson course: ask for an exact count, check it.
+    for (let attempt = 0; attempt < 2 && !(c?.syllabus?.length >= 8); attempt++) {
+      const r = await askMax(`Plan a complete course that teaches ${lang} to a beginner, from their very first program up to advanced topics. It has EXACTLY 14 lessons, in teaching order; each lesson is one idea that builds on the ones before it.
+Reply exactly in this shape, with all 14 lessons in the list:
+{"lessons":[{"title":"Your first program","goal":"Write and run a program that prints a message."},{"title":"Variables and types","goal":"Store numbers and text and print them."},{"title":"…","goal":"…"}]}`, `Max is planning a ${lang} course`);
+      if (!r) return;
+      c = { syllabus: (r.lessons || []).filter((l) => l?.title && l.title !== '…').map((l) => ({ title: String(l.title), goal: String(l.goal || '') })), done: [], last: 0, lessons: {} };
+    }
+    if (!(c.syllabus.length >= 8)) return task("Max didn't send a full course plan. Ask again?", 'bad');
+    await window.max.course(lang, c);
+  }
+  S.course = { lang, ...c };
+  menu(true);
+}
+function saveCourse() { const { lang, ...c } = S.course; window.max.course(lang, c).catch(() => {}); }
+const nextLesson = () => { const c = S.course, i = c.syllabus.findIndex((_, k) => !c.done.includes(k)); return i < 0 ? Math.min(c.last, c.syllabus.length - 1) : i; };
+function complete(i) { if (!S.course.done.includes(i)) { S.course.done.push(i); saveCourse(); } }
+function menu(greet = false, line = '') {
+  const c = S.course;
+  reset('menu');
+  S.lang = c.lang; S.title = 'Lessons';
+  task(`${c.done.length} of ${c.syllabus.length} lessons done. Pick any lesson, or carry on where you left off.`, '', `${c.lang.toUpperCase()} COURSE`);
+  render();
+  setWaiting('course');   // "continue" or "yes" opens the next lesson
+  const n = nextLesson(), all = c.done.length === c.syllabus.length;
+  if (line) say(line);
+  else if (greet) say(all ? `You've finished all ${c.syllabus.length} lessons. Pick any one to go over again.`
+    : c.done.length ? `Welcome back. You've done ${c.done.length} of ${c.syllabus.length} lessons. Next up is lesson ${n + 1}, ${c.syllabus[n].title}. Say continue, or pick any lesson.`
+      : `Here's your ${c.lang} course: ${c.syllabus.length} lessons, from the basics up. Say start, or pick any lesson.`);
+}
+function renderMenu() {
+  const c = S.course;
+  if (!c) { $('#code').innerHTML = ''; return; }   // still being planned
+  const n = nextLesson();
+  $('#code').innerHTML = `<div class="course"><div class="acts">${btn(`${c.done.length ? 'Continue' : 'Start'}: lesson ${n + 1}`, `lesson:${n}`, 'p')}</div>`
+    + c.syllabus.map((l, i) => `<button class="lesson${c.done.includes(i) ? ' done' : ''}${i === n ? ' next' : ''}" data-act="lesson:${i}"><b>${c.done.includes(i) ? '✓' : i + 1}</b>`
+      + `<span><span class="lt">${esc(l.title)}</span><span class="lg">${esc(l.goal)}</span></span></button>`).join('') + '</div>';
+}
+async function courseLesson(i) {
+  const c = S.course;
+  if (!c) return;
+  i = Math.max(0, Math.min(c.syllabus.length - 1, i));
+  const l = c.syllabus[i];
+  c.last = i; saveCourse();
+  reset('lesson');
+  S.ci = i; S.lang = c.lang; S.title = `Lesson ${i + 1} · ${l.title}`;
+  render();
+  let r = c.lessons?.[i];
+  if (!r) {
+    r = await askMax(`You are teaching a ${c.lang} course. This is lesson ${i + 1} of ${c.syllabus.length}: "${l.title}" (${l.goal}).
+Earlier lessons covered: ${c.syllabus.slice(0, i).map((x) => x.title).join('; ') || 'nothing yet, this is the very start'}. Use only what they covered plus this lesson's idea.
+Teach it with ONE example program in ${c.lang} (5 to 25 lines: small for basic ideas, longer for complex ones).
+Reply exactly in this shape:
+{"lang":"${c.lang}","title":"${l.title}","code":"the whole program","steps":[{"line":3,"text":"the exact text of line 3","say":"what this line does","simple":"the same, for a complete beginner"}]}
+3 to 8 steps, in order, each on the line it explains. The first step may give the big idea in one sentence.`, `Max is writing lesson ${i + 1}`);
+    if (!r || S.ci !== i) return;
+    (c.lessons ||= {})[i] = r;
+    saveCourse();
+  }
+  showLesson(r, c.lang, `Lesson ${i + 1} · ${l.title}`);
+  S.ci = i;
+}
+// The lesson is done (exercise solved or skipped): tick it and go back to the menu with the next one ready.
+function finishLesson() {
+  const c = S.course, i = S.ci;
+  if (!c || i === null) return;
+  complete(i);
+  const n = nextLesson();
+  menu(false, c.done.length === c.syllabus.length ? `That's the last lesson done. You've finished the ${c.lang} course!`
+    : `Lesson ${i + 1} done. Next up: lesson ${n + 1}, ${c.syllabus[n].title}. Say continue, or pick another.`);
+}
+
 // Explaining a program you dropped or pasted.
 async function explain(file) {
   reset('explain');
@@ -350,8 +442,9 @@ Reply exactly in this shape:
   if (!r) return;
   p.result = { correct: !!r.correct, output: String(r.output || ''), say: String(r.say || ''),
     mistakes: (r.mistakes || []).filter((m) => m?.say).map((m) => ({ at: locate(program, m.line, m.text), say: String(m.say) })) };
+  if (p.result.correct && S.ci !== null) complete(S.ci);
   renderPractice();
-  say(p.result.say + (p.result.correct ? ' Want another one?' : ''));
+  say(p.result.say + (p.result.correct ? (S.ci !== null ? ' Ready for the next lesson?' : ' Want another one?') : ''));
   setWaiting(p.result.correct ? 'practice' : null);
 }
 function hint() { if (S.practice?.hint) { task(`${S.practice.question}\nHint: ${S.practice.hint}`, '', 'PRACTICE'); say(S.practice.hint); } }
@@ -498,6 +591,8 @@ document.addEventListener('drop', (e) => e.preventDefault());
 /* ---------- Controls ---------- */
 function act(a) {
   if (a.startsWith('lang:')) return lesson(S.topic, a.slice(5));
+  if (a.startsWith('lesson:')) return courseLesson(Number(a.slice(7)));
+  if (a === 'finish') return finishLesson();
   if (a === 'next') return go(S.at + 1);
   if (a === 'prev') return go(S.at - 1);
   if (a === 'back') { S.answer = null; return render(); }
@@ -519,6 +614,8 @@ $('#simple').onclick = () => { S.simple = !S.simple; render(); sayCurrent(); };
 $('#trace').onclick = () => trace();
 $('#check').onclick = () => check();
 $('#hint').onclick = () => hint();
+$('#skip').onclick = () => finishLesson();
+$('#lessons').onclick = () => S.course && menu();
 $('#mute').onclick = () => setMuted(!muted);
 $('#pin').onclick = async () => $('#pin').classList.toggle('on', await window.max.tutorWin('pin'));
 $('#close').onclick = () => { stopVoice(); cancelAsk(); window.max.tutorWin('close'); };
@@ -540,11 +637,16 @@ document.addEventListener('keydown', (e) => {
 window.max.onTutor((job) => {
   if (job.kind === 'learn') return lesson(job.topic, job.lang);
   if (job.kind === 'pick') return pick(job.topic);
+  if (job.kind === 'course') return openCourse(job.lang);
   if (job.kind === 'debug') return debug(job.files, job);
   if (job.kind === 'drop') return showDrop(job.then, job.note);
   if (job.kind !== 'cmd') return;
   const c = job.cmd;
   if (c === 'lang') return S.waiting === 'lang' ? lesson(S.topic, job.lang) : null;
+  if (S.course && (c === 'continue' || c === 'nextLesson')) return courseLesson(c === 'continue' || S.ci === null ? nextLesson() : S.ci + 1);
+  if (S.course && c === 'lesson') return courseLesson(job.n - 1);
+  if (S.course && c === 'menu') return menu();
+  if (c === 'skip' || (c === 'no' && S.ci !== null)) return S.ci !== null ? finishLesson() : act('nope');
   if (c === 'next' || c === 'prev') return act(c);
   if (c === 'simple') { S.simple = true; render(); return sayCurrent(); }
   if (c === 'trace') return trace();

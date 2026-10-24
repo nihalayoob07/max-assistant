@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('max', {
   onTutor: (cb) => ipcRenderer.on('tutor', (_e, job) => cb(job)),
   tutorAsk: (id, messages, think) => ipcRenderer.invoke('tutorAsk', id, messages, !!think),
   tutorState: (waiting) => ipcRenderer.send('tutorState', waiting),
+  course: (lang, data) => ipcRenderer.invoke('course', lang, data),
   tutorSave: (fix) => ipcRenderer.invoke('tutorSave', fix),
   tutorRead: (p) => ipcRenderer.invoke('tutorRead', p),
   tutorWin: (what) => ipcRenderer.invoke('tutorWin', what),

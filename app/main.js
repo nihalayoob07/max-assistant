@@ -339,6 +339,7 @@ function showTutor(job) {
   if (overlay && !overlay.isDestroyed()) overlay.webContents.send('tuck');
 }
 async function startTutor(job) {
+  if (job.kind === 'course') { showTutor(job); return `Opening your ${job.lang} course.`; }
   if (job.kind === 'learn' && !job.lang) { showTutor({ kind: 'pick', topic: job.topic }); return 'Sure. Which language should I use?'; }
   if (job.kind === 'learn') { showTutor(job); return `Sure, I'll put up an example in ${job.lang}.`; }
   if (job.kind === 'explain') { showTutor({ kind: 'drop', then: 'explain' }); return 'Drop the file on the code window, or paste the program in.'; }
@@ -375,6 +376,15 @@ ipcMain.handle('tutorAsk', async (_e, _id, messages, think) => {
   return j.choices[0]?.message?.content || '';
 });
 ipcMain.on('tutorState', (_e, waiting) => { tutorWaiting = waiting || null; });
+// Courses ("teach me C language"): each language's lesson plan, the lessons written so far (revisits are instant) and
+// which are done, kept on this laptop so a course carries on where it stopped.
+const COURSES = path.join(app.getPath('userData'), 'courses.json');
+ipcMain.handle('course', (_e, lang, data) => {
+  let all = {};
+  try { all = JSON.parse(fs.readFileSync(COURSES, 'utf8')); } catch {}
+  if (data !== undefined) { all[lang] = data; fs.writeFileSync(COURSES, JSON.stringify(all)); }
+  return all[lang] || null;
+});
 ipcMain.handle('tutorSave', (_e, fix) => tutorCode.applyFix(fix));
 ipcMain.handle('tutorRead', (_e, p) => tutorCode.readDropped(String(p || '')));
 ipcMain.handle('tutorWin', (_e, what) => {
