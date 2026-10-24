@@ -513,8 +513,12 @@ function voiceBounds(corner) {
   const a = screen.getPrimaryDisplay().workArea;
   return corner ? { x: a.x, y: a.y + a.height - 280, width: 620, height: 280 } : { x: a.x, y: a.y + 1, width: a.width, height: a.height - 1 };
 }
+// Pressing and holding the core hides Max entirely (its corner no longer catches clicks); calling it again brings it back.
+const hiddenByHold = () => !!overlay && !overlay.isDestroyed() && !overlay.isVisible();
+function unhide() { if (hiddenByHold()) { overlay.showInactive(); overlay.setAlwaysOnTop(true, 'screen-saver'); } }
 function openVoice(question, corner = false, phone = false) {
   if (overlay && !overlay.isDestroyed()) {
+    unhide();
     if (!corner) overlay.webContents.send('expand');
     return;
   }
@@ -567,6 +571,7 @@ ipcMain.on('voice', (_e, what) => {
   if (what === 'open') return openVoice();
   if (what === 'close') return overlay?.close();
   if (!overlay || overlay.isDestroyed()) return;
+  if (what === 'hide') return overlay.hide();
   // 'mini': tucked into the corner (window cut to the core's shape); 'full': over the whole screen.
   // Growing: open the shape up before resizing, or the first frames at full size are clipped to the small
   // corner cut-out (the zoom-in glitch). Shrinking: resize first, then cut.
@@ -607,6 +612,7 @@ ipcMain.handle('wake', async (_e, buffer, sliding) => {
 // phone: it came from the phone's Remote, so the laptop doesn't open its own mic afterwards.
 async function summon(q, phone = false) {
   if (overlay && !overlay.isDestroyed()) {
+    unhide();
     if (await frontIsDesktop()) overlay.webContents.send('expand');   // nothing open: take the stage
     overlay.webContents.send('wake', q, phone);
   } else openVoice(q, !(await frontIsDesktop()), phone);
@@ -823,6 +829,7 @@ ipcMain.handle('load', async () => ({ ...parse(await sandbox(READ)), cfg: { curr
 const proactive = require('./proactive');
 const NUDGED = path.join(app.getPath('userData'), 'nudged.json');
 async function checkNudges() {
+  if (hiddenByHold()) return;   // tucked out of sight on purpose: the nudge waits until Max is called again
   let said = {};
   try { said = JSON.parse(fs.readFileSync(NUDGED, 'utf8')); } catch {}
   for (const [k, at] of Object.entries(said)) if (Date.now() - at > 3 * 86400000) delete said[k];

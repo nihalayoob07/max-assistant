@@ -430,7 +430,24 @@ function cancelAsk() {
   $('#you').textContent = '';
   listen();
 }
+// Press and hold the core (0.7 s) to hide Max until it's called again ("Max", Ctrl+Shift+Space, the phone): tucked in
+// the corner it still covers what's under it. It fades while held, so you can see it's about to go.
+let holdTimer = null, held = false;
+core.addEventListener('pointerdown', () => {
+  held = false;
+  core.classList.add('holding');
+  holdTimer = setTimeout(() => {
+    held = true;
+    core.classList.remove('holding');
+    stopAsides(); stopSpeaking();
+    if (mode === 'thinking') cancelAsk();
+    setMini(true);
+    window.max.voice('hide');
+  }, 700);
+});
+for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) core.addEventListener(ev, () => { clearTimeout(holdTimer); core.classList.remove('holding'); });
 core.addEventListener('click', () => {
+  if (held) { held = false; return; }   // that was a hold, not a click
   if (mini) { setMini(false); return; }
   if (mode === 'thinking') { cancelAsk(); return; }
   if (mode === 'speaking' || mode === 'preparing') { stopSpeaking(); $('#reply').textContent = pendingReply; listen(); }   // interrupt

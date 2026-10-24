@@ -73,17 +73,25 @@ const numbered = (code) => code.split('\n').map((l, i) => `${String(i + 1).padSt
 // Text copied from a numbered listing loses its "  12| " prefixes (only if every line has one).
 const unnumber = (s) => { const ls = String(s ?? '').split('\n'); return ls.every((l) => !l.trim() || /^\s*\d+\s*\|/.test(l)) ? ls.map((l) => l.replace(/^\s*\d+\s*\| ?/, '')).join('\n') : String(s ?? ''); };
 const tidy = (code) => String(code ?? '').replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '');
-// The line a step is about: Max gives a number and the line's text; the text wins when the number is off.
+// The line a step is about: Max gives a number and the line's text; the text wins when the number is off (Max miscounts,
+// e.g. after adding a title line), compared without spaces. Never a blank line: it moves down to the next code.
 function locate(code, line, text) {
   const lines = code.split('\n');
   const n = Math.min(Math.max(1, Math.round(Number(line)) || 1), lines.length);
-  const t = unnumber(text || '').split('\n')[0].trim();
-  if (!t || lines[n - 1].trim() === t) return n;
-  let best = 0, dist = Infinity;
-  lines.forEach((l, i) => { if (l.trim() === t && Math.abs(i + 1 - n) < dist) { best = i + 1; dist = Math.abs(i + 1 - n); } });
-  if (!best) lines.forEach((l, i) => { if (t.length > 3 && l.includes(t) && Math.abs(i + 1 - n) < dist) { best = i + 1; dist = Math.abs(i + 1 - n); } });
-  return best || n;
+  const squash = (s) => String(s).replace(/\s+/g, '');
+  const t = squash(unnumber(text || '').split('\n')[0]);
+  const near = (test) => {
+    let best = 0, dist = Infinity;
+    lines.forEach((l, i) => { if (test(squash(l)) && Math.abs(i + 1 - n) < dist) { best = i + 1; dist = Math.abs(i + 1 - n); } });
+    return best;
+  };
+  let at = !t ? n : squash(lines[n - 1]) === t ? n
+    : near((l) => l === t) || (t.length > 3 && near((l) => l.includes(t) || (l.length > 5 && t.includes(l)))) || n;
+  while (at < lines.length && !lines[at - 1].trim()) at++;
+  return at;
 }
+// A lesson's program, minus a title comment Max sometimes puts on top ("# Lesson 2: Variables", not even valid C).
+const lessonCode = (code) => tidy(code).replace(/^(?:[ \t]*(?:#|\/\/|--|\/\*)[^\n]*\blesson\b[^\n]*\n)+/i, '');
 const LANG_BY_EXT = { c: 'C', h: 'C', cpp: 'C++', cc: 'C++', cxx: 'C++', hpp: 'C++', cs: 'C#', java: 'Java', kt: 'Kotlin', py: 'Python', js: 'JavaScript',
   mjs: 'JavaScript', jsx: 'JavaScript', ts: 'TypeScript', tsx: 'TypeScript', go: 'Go', rs: 'Rust', rb: 'Ruby', php: 'PHP', swift: 'Swift', dart: 'Dart',
   scala: 'Scala', lua: 'Lua', pl: 'Perl', r: 'R', sql: 'SQL', sh: 'Bash', ps1: 'PowerShell', html: 'HTML', css: 'CSS', hs: 'Haskell' };
@@ -279,13 +287,13 @@ async function lesson(topic, lang) {
   const r = await askMax(`The user asked: "${topic}".
 Teach exactly what they asked about (a while loop is not a for loop) with ONE short, simple example program (5 to 15 lines) written in ${lang}, and only ${lang}, whatever language other words in the question suggest. Simple syntax gets a simple program. If they asked to learn the whole language, start at the very beginning: a first program and what each part of it does.
 Reply exactly in this shape:
-{"lang":"${lang}","title":"for loops","code":"the whole program","steps":[{"line":3,"text":"the exact text of line 3","say":"what this line does","simple":"the same, for a complete beginner"}]}
+{"lang":"${lang}","title":"for loops","code":"the whole program","steps":[{"line":3,"text":"line 3 copied exactly from the code","say":"what this line does","simple":"the same, for a complete beginner"}]}
 3 to 6 steps, in order, each on the line it explains. The first step may give the big idea in one sentence.`, `Max is writing a ${lang} example`);
   if (r) showLesson(r, lang, String(r.title || topic));
 }
 function showLesson(r, lang, title) {
   S.lang = lang; S.title = title;
-  S.files = [{ name: 'example', code: tidy(r.code) }];
+  S.files = [{ name: 'example', code: lessonCode(r.code) }];
   S.notes = steps(r.steps, S.files[0].code).sort((a, b) => a.line - b.line);   // top to bottom, whatever order Max sent
   S.offer = true;
   if (!S.notes.length) return task("Max didn't send any steps. Ask again?", 'bad');
@@ -354,9 +362,9 @@ async function courseLesson(i) {
   if (!r) {
     r = await askMax(`You are teaching a ${c.lang} course. This is lesson ${i + 1} of ${c.syllabus.length}: "${l.title}" (${l.goal}).
 Earlier lessons covered: ${c.syllabus.slice(0, i).map((x) => x.title).join('; ') || 'nothing yet, this is the very start'}. Use only what they covered plus this lesson's idea.
-Teach it with ONE example program in ${c.lang} (5 to 25 lines: small for basic ideas, longer for complex ones).
+Teach it with ONE example program in ${c.lang} (5 to 25 lines: small for basic ideas, longer for complex ones). It must be a complete program that runs as is: no title or lesson comment at the top.
 Reply exactly in this shape:
-{"lang":"${c.lang}","title":"${l.title}","code":"the whole program","steps":[{"line":3,"text":"the exact text of line 3","say":"what this line does","simple":"the same, for a complete beginner"}]}
+{"lang":"${c.lang}","title":"${l.title}","code":"the whole program","steps":[{"line":3,"text":"line 3 copied exactly from the code","say":"what this line does","simple":"the same, for a complete beginner"}]}
 3 to 8 steps, in order, each on the line it explains. The first step may give the big idea in one sentence.`, `Max is writing lesson ${i + 1}`);
     if (!r || S.ci !== i) return;
     (c.lessons ||= {})[i] = r;
