@@ -41,6 +41,8 @@ ELEVENLABS_SPEED=""
 SANDBOX=max
 # Any NVIDIA model your key can reach on build.nvidia.com.
 MODEL=nvidia/nemotron-3.5-super-vl-120b-a12b
+# The WhatsApp front desk's model (it negotiates, so keep a careful one). Empty = nemotron-3.5-super-vl-120b-a12b.
+DESK_MODEL=""
 SANDBOX_CPU=1
 SANDBOX_RAM=1Gi
 

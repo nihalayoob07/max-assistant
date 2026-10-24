@@ -18,7 +18,7 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 # Owner settings for the scripts in the sandbox (they source this file). Single-quoted for the shell.
 q() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
 { echo "OWNER_NAME=$(q "${OWNER_NAME:-}")"; echo "MAX_TZ=$(q "$TIMEZONE")"; echo "CURRENCY=$(q "${CURRENCY:-₹}")"
-  echo "BRIEFING_CITY=$(q "${CITY:-}")"; echo "MODEL=$(q "${MODEL:-}")"; } > "$tmp/max.env"
+  echo "BRIEFING_CITY=$(q "${CITY:-}")"; echo "MODEL=$(q "${MODEL:-}")"; echo "DESK_MODEL=$(q "${DESK_MODEL:-}")"; } > "$tmp/max.env"
 
 # SOUL.md and skills carry {{OWNER}}, {{TZ}} and {{CURRENCY}}: fill them in on the way into the sandbox.
 render() { OWNER="${OWNER_NAME:-the owner}" TZN="$TIMEZONE" CUR="${CURRENCY:-₹}" \
