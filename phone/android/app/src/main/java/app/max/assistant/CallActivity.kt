@@ -24,8 +24,6 @@ import android.os.SystemClock
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.util.Base64
 import android.util.Log
 import android.util.TypedValue
@@ -51,7 +49,7 @@ import java.io.File
 import java.util.Locale
 import kotlin.concurrent.thread
 
-/** The call: rings, then Max reads out the deal (TextToSpeech), listens (SpeechRecognizer), repeats back what it
+/** The call: rings, then Max reads out the deal (the ElevenLabs voice, via the server), listens (SpeechRecognizer), repeats back what it
  *  understood, and only acts on a "yes". The buttons do the same without talking. */
 class CallActivity : Activity() {
 
@@ -83,9 +81,6 @@ class CallActivity : Activity() {
     private var id = ""
     private var deal: JSONObject? = null   // what this call is about (server: GET /call)
     private val talking get() = id.startsWith("brief:") || id.startsWith("E") || id.startsWith("me:") || id.startsWith("won:")   // after Max speaks, a conversation with Max
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
-    private var ttsInit = false        // the engine answered (ready or not)
     private var recognizer: SpeechRecognizer? = null
     private var offline = true          // prefer the offline English pack; dropped if this phone doesn't have it
     private var answered = false
@@ -123,10 +118,10 @@ class CallActivity : Activity() {
     // ---------- the conversation ----------
     private fun load() {
         runCatching { JSONObject(Api.call(this, "GET", "/call?id=" + java.net.URLEncoder.encode(id, "UTF-8"))) }
-            .onSuccess { d -> runOnUiThread { deal = d; showCall(d); if (answered && !ttsStarted) begin() } }
+            .onSuccess { d -> runOnUiThread { deal = d; showCall(d); if (answered && !started) begin() } }
             .onFailure { e -> runOnUiThread { status.text = "Can't reach the server"; line("Max", "I can't get this call's details (${e.message}). It's on Telegram too.") } }
     }
-    private var ttsStarted = false
+    private var started = false
 
     private fun answer() {
         answered = true
@@ -134,37 +129,22 @@ class CallActivity : Activity() {
         toCall()
         status.text = "Connecting…"
         route()
-        tts = TextToSpeech(this) { ok ->
-            ttsReady = ok == TextToSpeech.SUCCESS
-            ttsInit = true
-            tts?.let { pickVoice(it) }
-            if (deal != null && !ttsStarted) begin()
-        }
+        if (deal != null && !started) begin()
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
     }
 
     private fun begin() {
-        if (!ttsInit) return   // the TTS engine's callback calls back here
-        ttsStarted = true
+        started = true
         if ((deal?.optJSONArray("buttons")?.length() ?: 0) > 0) dealRow.visibility = View.VISIBLE
         say(deal?.optString("say") ?: "") { listen() }
-    }
-
-    /** Only used when the server can't make the ElevenLabs voice: the phone's closest is an en-GB male voice. */
-    private fun pickVoice(t: TextToSpeech) {
-        val gb = runCatching { t.voices }.getOrNull().orEmpty().filter { it.locale.language == "en" && it.locale.country == "GB" && !it.isNetworkConnectionRequired }
-        val male = listOf("rjs", "gbd", "gbb").firstNotNullOfOrNull { n -> gb.find { it.name.contains("-x-$n") } }
-        Log.i("MaxCall", "voices en-GB: ${gb.map { it.name }} -> ${male?.name}")
-        if (male != null) t.voice = male else t.language = Locale.UK
-        t.setPitch(0.9f)
     }
 
     private var player: MediaPlayer? = null
     private var said = 0   // bumped by every line and by stopVoice(): a late ElevenLabs reply for an old line is dropped
 
-    /** Max's voice: ElevenLabs, made by the server (POST /tts, so the key never sits on the phone), else the phone's
-     *  own TextToSpeech when the server can't (no key, offline, out of credits). */
+    /** Max's voice: ElevenLabs, made by the server (POST /tts, so the key never sits on the phone). It's the only voice:
+     *  if the server can't make it (no key, offline, out of credits) the line just shows, with a pause to read it. */
     private fun say(text: String, then: (() -> Unit)? = null) {
         line("Max", text)
         status.text = "Max is speaking"
@@ -178,7 +158,7 @@ class CallActivity : Activity() {
                 .onFailure { Log.w("MaxCall", "ElevenLabs voice: ${it.message}") }.getOrNull()
             runOnUiThread {
                 if (n != said || isFinishing) return@runOnUiThread
-                if (mp3 == null || !play(mp3, then)) speakLocal(spoken.replace("₹", "rupees "), then)
+                if (mp3 == null || !play(mp3, then)) { status.text = "No voice: read it here"; handler.postDelayed({ then?.invoke() }, 1500L + 60L * text.length) }
             }
         }
     }
@@ -200,25 +180,12 @@ class CallActivity : Activity() {
     private fun route() {
         audio.mode = if (speaker) AudioManager.MODE_NORMAL else AudioManager.MODE_IN_COMMUNICATION
         audio.isSpeakerphoneOn = false
-        tts?.setAudioAttributes(voiceAttrs())
     }
     private fun voiceAttrs() = AudioAttributes.Builder()
         .setUsage(if (speaker) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_VOICE_COMMUNICATION)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
 
-    private fun stopVoice() { said++; tts?.stop(); player?.release(); player = null }
-
-    private fun speakLocal(spoken: String, then: (() -> Unit)?) {
-        val t = tts
-        if (t == null || !ttsReady) { handler.postDelayed({ then?.invoke() }, 1500); return }
-        val id = System.nanoTime().toString()
-        t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(u: String?) {}
-            override fun onDone(u: String?) { if (u == id) runOnUiThread { then?.invoke() } }
-            @Deprecated("old API") override fun onError(u: String?) { if (u == id) runOnUiThread { then?.invoke() } }
-        })
-        t.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, id)
-    }
+    private fun stopVoice() { said++; player?.release(); player = null }
 
     private fun listen() {
         if (busy || isFinishing) return
@@ -744,7 +711,6 @@ class CallActivity : Activity() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         recognizer?.destroy()
-        tts?.shutdown()
         player?.release()
         if (answered) { audio.isSpeakerphoneOn = false; audio.mode = AudioManager.MODE_NORMAL }
         super.onDestroy()
