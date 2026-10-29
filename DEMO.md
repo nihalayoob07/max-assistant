@@ -1,39 +1,56 @@
-# Max: 2-minute demo
+# Max: 3-minute demo
 
-Three things, all filmed live on a phone over Telegram: texting a todo, a "look into" with sources, and the 06:30 IST briefing arriving. Max runs on the home server the whole time; the laptop is only used for the screen-recorded terminal shots.
+Shows Max working end to end and how it uses NVIDIA Nemotron. Everything is filmed live: real replies, real server. Max runs Nemotron on **build.nvidia.com**; Nebius Token Factory is not used (no credits during the hackathon), and the video says so.
 
 ## Before recording
 
-- Phone: Do Not Disturb on (Telegram allowed), clean notification shade, and the clock visible in the status bar.
-- Seed a few todos a day early, so the briefing has something real to show: one overdue, one due today, one open.
-- The briefing shot has to be filmed at 06:30 IST, so record it first, on a morning before the rest. Backup if you miss it: text `brief me` (same skill, same data script).
-- Pre-check on the server: `max status` shows the sandbox Ready, and `max policy list` shows the allow-list for shot 5.
-- Screen-record the phone (Android's built-in recorder) and the terminal (OBS). Edit them together afterwards.
+- **Server:** `max status` shows the sandbox Ready. Run `max ask "hi"` once so the model is warm.
+- **Business:** use one real business (or `business-template/example-shop`) with a policy you're happy to show. Know its list price and floor for one product.
+- **Customer phone:** a second phone or number on WhatsApp, to play the customer.
+- **Your phone:** Do Not Disturb on (Telegram and the Max app allowed), clean notification shade.
+- **Data:** seed a few todos and one meeting today, so the briefing and dashboard aren't empty.
+- **Blur** real customer names and numbers in the edit, or use a test contact.
 
-## Script
+## Recording specs
+
+- 1920×1080, 30 fps. Phone clips: Android's screen recorder. PC and terminal: OBS.
+- One file per shot, named by shot number: `01_hook.mp4`, `03_desk.mp4`, and so on.
+- Voice-over: one file per shot (`03_vo.m4a`), quiet room, phone close to your mouth. Read the line after the shot is filmed, so it matches what happened.
+- Don't fake replies. If Nemotron is slow, keep filming; the wait gets cut in the edit.
+
+## Script (≈2:55)
 
 | Time | Shot | On screen | Voice-over |
 |---|---|---|---|
-| 0:00–0:12 | 1. Hook | Phone lock screen at 06:30, Max's briefing notification pops in | "This is Max. Every morning at 6:30 it sends me what I need for the day, and it runs on my own server, not someone's cloud." |
-| 0:12–0:30 | 2. Briefing | Open Telegram and scroll the briefing: weather, overdue and today's todos | "Weather for my city, what's overdue, what's due today. It's built from my own notes files inside the sandbox." |
-| 0:30–0:50 | 3. Capture | Type `todo: submit hackathon video sunday`. Reply: `✓ todo: submit hackathon video (due Sun ...)`. Then `what's on my list?` | "I text it like a friend. It works out that 'sunday' is a date, files the todo, and confirms in one line. No app, no forms." |
-| 0:50–1:20 | 4. Look into | Type `look into the cheapest way to get from Mumbai to Pune this weekend`. Show the short answer plus the `Sources:` links, and tap one | "Ask it to look into something and you get a short answer with real sources, through Tavily search. It's also saved to my notes, so I can find it later." |
-| 1:20–1:45 | 5. Privacy | Terminal: `max policy list` (the allow-list), then a request to a host that isn't on the list getting denied. Overlay: "keys live in the OpenShell gateway, never in the sandbox" | "Max runs in an NVIDIA OpenShell sandbox. It can only reach the services I've allowed, and the API keys stay in the gateway. The agent only ever sees placeholders." |
-| 1:45–2:00 | 6. Stack + close | Architecture diagram from the README. Overlay: Nemotron 3 Super · Hermes Agent · OpenShell · NemoClaw · 1 CPU / 1 GiB home server | "Nemotron 3 Super for the brain, Hermes for memory, skills and the schedule, and NemoClaw to wire it up. Always on, and private by default." |
+| 0:00–0:08 | 1. Intro | The first 8 s of the promo (`max_demo.mp4`) | *(music only)* |
+| 0:08–0:20 | 2. What it is | Telegram open on your phone, Max's chat | "This is Max, a private AI business partner that runs on my own server. NVIDIA Nemotron does all the thinking. Here it is working." |
+| 0:20–1:00 | 3. Deal closed | Split screen: customer WhatsApp and your Telegram. Customer asks the price, lowballs, Max holds, counters with a precise number, customer accepts above the floor. Your Telegram gets "deal closed". | "A customer messages my business on WhatsApp. Nemotron reads the profile, answers, and haggles. It holds the first lowball, counters in small precise steps, and closes. I didn't touch anything." |
+| 1:00–1:25 | 4. Escalation | Customer offers below the floor. Your Android phone rings with "incoming call · offer ₹…". Answer and say "counter at …". Max sends the counter. | "This one's below my floor, so Max can't take it. It calls me instead. I answer by voice and Max sends my counter." |
+| 1:25–1:45 | 5. Code decides the price | Terminal: run the deal gate three times (OK, LOW, ESCALATE). Commands below. | "Nemotron negotiates, but code decides. Every price goes through this gate before a deal closes. The model can't agree to anything outside my limits." |
+| 1:45–2:10 | 6. Personal assistant | Telegram: `todo: send invoice to Café Rio friday` gets a one-line confirmation, then `look into the cheapest courier for 2 kg parcels` gets an answer with sources, then the morning briefing message | "It's also my assistant. Todos, research with real sources, and a briefing every morning at 6:30." |
+| 2:10–2:25 | 7. Desktop | Desktop app: say "Max, what's on today?", then "open Spotify" | "On my PC it listens. Simple commands run instantly, and anything harder goes to Nemotron." |
+| 2:25–2:45 | 8. How Nemotron is used | Terminal: `grep MODEL max.config`, then `max status` showing the inference provider and model | "Max runs nvidia/nemotron-3.5-super on build.nvidia.com with reasoning on. Turning reasoning off was four times faster, but it made up prices, so we kept it on. Because Nemotron is open, one command switches it to Nemotron Nano on a local machine. We didn't use Nebius Token Factory; it's OpenAI-compatible, so it would be a provider switch." |
+| 2:45–2:55 | 9. Private by design | Terminal: `max policy list` | "It all runs in an OpenShell sandbox. Keys stay in the gateway, and Max can only reach the hosts I've allowed." |
+| 2:55–3:00 | 10. End card | The promo's last 5 s (MAX + repo link) | *(music only)* |
 
-## Shot list
+## Terminal commands
 
-1. Phone lock screen at 06:30 IST, briefing notification arriving (real time, no edits to the clock)
-2. Telegram: the full briefing message, scrolled slowly
-3. Telegram: typing the todo, then the one-line confirmation
-4. Telegram: `what's on my list?` reply
-5. Telegram: the look-into question, the sourced answer, and tapping a source link
-6. Terminal: `max policy list`
-7. Terminal: a request to a blocked host being denied (for example `max exec -- curl -sS https://example.com`; dry-run it first to check it's denied)
-8. README architecture diagram, as a still with the stack names overlaid
-9. Optional B-roll: the home server box, and `max status` showing Ready
+```bash
+# Shot 5: the deal gate (use your business slug, product, list price and floor)
+max exec -- ~/.hermes/scripts/deal_check.sh example-shop "desk organiser" 2 760 2026-12-20   # OK
+max exec -- ~/.hermes/scripts/deal_check.sh example-shop "desk organiser" 2 600 2026-12-20   # LOW (under floor)
+max exec -- ~/.hermes/scripts/deal_check.sh example-shop "desk organiser" 2 760 2026-11-01   # ESCALATE (lead time)
 
-## Notes
+# Shot 8: the model
+grep MODEL max.config
+max status
 
-- Keep the replies real. If Max is slow, cut the wait, but don't fake a reply.
-- Blur anything personal in the notes files before you show them.
+# Shot 9: the allow-list
+max policy list
+```
+
+Dry-run each command before filming, and use a delivery date far enough ahead to pass the lead time.
+
+## Hand-off for editing
+
+Send the shot clips (`01`–`10`) and voice files (`02_vo`–`09_vo`). The edit trims waits, adds captions and the promo intro and end card, blurs personal details, and exports a 1080p MP4 under 3:00 for YouTube.
